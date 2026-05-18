@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <meta name="theme-color" content="#107c41">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="포트폴리오">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23107c41'/%3E%3Ctext x='50' y='68' font-size='60' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3E₩%3C/text%3E%3C/svg%3E">
+    <title>유재진 통합 포트폴리오 (Google Sheets 동기화)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        body { font-family: "Malgun Gothic","맑은 고딕",-apple-system,BlinkMacSystemFont,sans-serif; background-color:#f3f2f1; margin:0; padding:0; overflow:hidden; }
+        ::-webkit-scrollbar { width:14px; height:14px; }
+        ::-webkit-scrollbar-track { background:#f1f1f1; border-left:1px solid #d2d2d2; border-top:1px solid #d2d2d2; }
+        ::-webkit-scrollbar-thumb { background:#c1c1c1; border:1px solid #f1f1f1; }
+        ::-webkit-scrollbar-thumb:hover { background:#a8a8a8; }
+        .up-color { color:#d10000; }
+        .down-color { color:#0054ff; }
+        .excel-table { border-collapse:collapse; width:100%; font-size:12px; background-color:#fff; }
+        .excel-table th, .excel-table td { border:1px solid #d2d2d2; padding:4px 8px; white-space:nowrap; height:24px; }
+        .excel-table th { background-color:#f3f2f1; font-weight:normal; color:#333; text-align:center; border-bottom:2px solid #c6c6c6; }
+        .excel-table tbody tr { cursor:pointer; }
+        .excel-table tbody tr:hover { background-color:#e5f1fb; }
+        .sort-btn { background:none; border:none; width:100%; height:100%; display:flex; justify-content:space-between; align-items:center; cursor:pointer; font-family:inherit; font-weight:bold; color:#333; padding:0; }
+        .sort-btn:hover { background-color:#e9e9e9; }
+        .excel-header-bar { background-color:#107c41; color:white; }
+        .sheet-tabs-container { background-color:#f3f2f1; display:flex; overflow-x:auto; border-top:1px solid #c6c6c6; }
+        .sheet-tab { padding:5px 20px; font-size:12px; color:#333; cursor:pointer; border-right:1px solid #c6c6c6; border-top:2px solid transparent; background-color:#e1dfdd; transition:background-color 0.1s; white-space:nowrap; }
+        .sheet-tab:hover { background-color:#fff; }
+        .sheet-tab.active { background-color:#fff; font-weight:bold; color:#107c41; border-top:2px solid #107c41; border-bottom:1px solid #fff; position:relative; top:1px; }
+        @keyframes flashGreen { 0%{background-color:#bbf7d0} 100%{background-color:transparent} }
+        .flash-update { animation:flashGreen 1.5s ease-out; }
+        #dashboard-view, #grid-view { display:none; height:100%; }
+        #dashboard-view.active, #grid-view.active { display:flex; flex-direction:column; }
+        .modal-input { width:100%; border:1px solid #c6c6c6; padding:6px 8px; font-size:13px; outline:none; }
+        .modal-input:focus { border-color:#107c41; box-shadow:0 0 0 2px rgba(16,124,65,0.15); }
+        .live-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#22c55e; margin-right:4px; animation:pulse 1.8s ease-in-out infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+        /* ─── 모바일 반응형 ─── */
+        @media (max-width: 768px) {
+            body { overflow:auto; }
+            .excel-header-bar { flex-wrap:wrap; gap:6px; padding:8px; }
+            .excel-header-bar > div { width:100%; justify-content:flex-start; }
+            .excel-header-bar > div:last-child { justify-content:space-between; }
+            .sheet-tab { padding:6px 12px; font-size:11px; }
+            .excel-table th, .excel-table td { padding:6px 4px; font-size:11px; }
+            .excel-table { font-size:11px; }
+            #dashboard-view { padding:10px; }
+            #dashboard-view h2 { font-size:16px; }
+            #dashboard-view .text-3xl { font-size:18px; }
+            #dashboard-view .text-2xl { font-size:14px; }
+            .grid-cols-1.md\:grid-cols-4 > div { padding:10px; }
+            #editModal > div, #settingsModal > div { width:95vw; }
+        }
+        /* 모바일에서 표가 가로 스크롤 되도록 */
+        @media (max-width: 768px) {
+            #grid-view { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+        }
+    </style>
+</head>
+<body class="text-slate-800 flex flex-col h-screen">
+
+    <!-- 1. 상단 타이틀 바 -->
+    <div class="excel-header-bar px-3 py-1 flex justify-between items-center text-[13px] shadow-sm flex-shrink-0 select-none">
+        <div class="flex items-center space-x-3 font-semibold">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+            <span class="tracking-wide">통합포트폴리오 — Google Sheets 실시간 동기화</span>
+            <select id="ownerFilter" onchange="changeOwner(this.value)" class="bg-white/20 text-white text-xs font-bold border border-white/40 rounded px-2 py-0.5 cursor-pointer">
+                <option value="유재진" class="text-black">👤 유재진</option>
+                <option value="김희연" class="text-black">👤 김희연</option>
+                <option value="유태현" class="text-black">👤 유태현</option>
+                <option value="유해인" class="text-black">👤 유해인</option>
+                <option value="유지원" class="text-black">👤 유지원</option>
+                <option value="유앤김" class="text-black">👫 유앤김</option>
+                <option value="ALL" class="text-black">👥 전체 (합산)</option>
+            </select>
+            <span class="bg-white/20 px-2 py-0.5 rounded text-[10px]" id="header-stats">로딩 중...</span>
+        </div>
+        <div class="flex items-center space-x-3">
+            <button onclick="addNewItem()" class="px-3 py-1.5 bg-white hover:bg-gray-100 text-[#107c41] font-bold text-xs rounded shadow-md border border-white/30">
+                ＋ 새 종목
+            </button>
+            <button onclick="openImportModal()" class="px-3 py-1.5 bg-white hover:bg-gray-100 text-[#107c41] font-bold text-xs rounded shadow-md border border-white/30">
+                📥 엑셀 가져오기
+            </button>
+            <button onclick="toggleBulkMode()" id="bulkBtn" class="px-3 py-1.5 bg-white hover:bg-gray-100 text-[#107c41] font-bold text-xs rounded shadow-md border border-white/30">
+                ☑️ 다중선택
+            </button>
+            <button onclick="openOcrModal()" class="px-3 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-yellow-900 font-bold text-xs rounded shadow-md border border-yellow-500">
+                📸 사진 OCR
+            </button>
+            <button onclick="fetchData(true)" id="syncBtn"
+                class="flex items-center space-x-2 px-4 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-yellow-900 font-bold text-xs rounded shadow-md cursor-pointer transition-all active:scale-95 border border-yellow-500">
+                <svg id="syncIcon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                <span id="syncText">⚡ Google Sheets 동기화</span>
+            </button>
+            <button onclick="openSettings()" class="p-1.5 bg-white/20 hover:bg-white/30 text-white rounded text-xs" title="설정">⚙️</button>
+            <div class="opacity-90 text-[11px] font-mono border-l border-white/30 pl-3" id="lastSyncTime">미연결</div>
+        </div>
+    </div>
+
+    <!-- 2. 리본 메뉴 -->
+    <div class="bg-[#f3f2f1] border-b border-[#c6c6c6] px-2 py-1.5 flex justify-between items-center flex-shrink-0 select-none">
+        <div class="flex items-center gap-1 text-xs">
+            <div class="flex items-center space-x-2 font-mono bg-white px-2 py-1 border border-gray-300 shadow-sm mr-2">
+                <span class="text-gray-500 font-bold">실시간 환율:</span>
+                <span class="text-gray-400 ml-1">USD/KRW</span> <strong id="rateUSD" class="text-blue-700">-</strong>
+                <span class="text-gray-300 mx-1">|</span>
+                <span class="text-gray-400">JPY/KRW</span> <strong id="rateJPY" class="text-blue-700">-</strong>
+            </div>
+            <div class="w-px h-5 bg-gray-300 mx-1"></div>
+            <button onclick="resetAll()" class="px-3 py-1 border border-gray-300 bg-white hover:bg-gray-100 flex items-center space-x-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                <span>검색·필터 지우기</span>
+            </button>
+            <span class="ml-3 text-[11px] text-gray-500"><span class="live-dot"></span>행을 클릭하면 수정 가능</span>
+        </div>
+        <div class="flex items-center pr-2">
+            <div class="relative w-64 border border-gray-400 bg-white flex items-center h-[24px]">
+                <span class="px-2 text-gray-400"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+                <input type="text" id="searchInput" placeholder="시트 내 데이터 검색..." class="w-full text-xs outline-none bg-transparent"/>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 메인 작업 영역 -->
+    <div class="flex-1 flex flex-col overflow-hidden bg-white">
+        <div class="flex items-center border-b border-[#c6c6c6] bg-white h-7 flex-shrink-0 text-xs shadow-sm">
+            <div class="w-10 border-r border-[#c6c6c6] flex justify-center items-center text-gray-500 bg-gray-100 font-serif italic font-bold">fx</div>
+            <div class="flex-1 px-3 text-gray-800 font-mono tracking-tight font-bold text-blue-800" id="formulaBar">=SUM('Portfolio'!평가금액)</div>
+        </div>
+
+        <div class="flex-1 relative overflow-hidden bg-[#e1dfdd] p-1.5">
+            <!-- 대시보드 -->
+            <div id="dashboard-view" class="active w-full h-full bg-white border border-gray-400 shadow-sm overflow-y-auto p-5">
+                <div class="flex items-center justify-between mb-5 border-b-2 border-[#107c41] pb-2">
+                    <h2 class="text-xl font-bold text-[#107c41]">📊 통합 포트폴리오 마스터 대시보드</h2>
+                    <div class="text-sm font-bold text-gray-500" id="dash-meta">동기화 대기</div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div class="border border-gray-300 p-4 bg-gray-50">
+                        <div class="text-xs text-gray-500 font-bold uppercase mb-1">총 매입금액</div>
+                        <div id="dash-buy" class="text-2xl font-bold font-mono text-gray-800">-</div>
+                    </div>
+                    <div class="border border-blue-300 p-4 bg-blue-50 shadow-md">
+                        <div class="text-xs text-blue-800 font-bold uppercase mb-1">총 평가자산</div>
+                        <div id="dash-eval" class="text-3xl font-extrabold font-mono text-blue-900">-</div>
+                    </div>
+                    <div class="border border-gray-300 p-4 bg-gray-50">
+                        <div class="text-xs text-gray-500 font-bold uppercase mb-1">총 평가손익</div>
+                        <div id="dash-profit" class="text-2xl font-bold font-mono">-</div>
+                    </div>
+                    <div class="border border-gray-300 p-4 bg-gray-50">
+                        <div class="text-xs text-gray-500 font-bold uppercase mb-1">통합 수익률</div>
+                        <div id="dash-rate" class="text-2xl font-bold font-mono">-</div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 h-64 mb-6">
+                    <div class="border border-gray-300 p-3 flex flex-col shadow-sm">
+                        <div class="text-xs font-bold text-center bg-gray-100 p-1.5 mb-2 border border-gray-200">① 자산군별 비중</div>
+                        <div class="relative flex-1"><canvas id="typeChart"></canvas></div>
+                    </div>
+                    <div class="border border-gray-300 p-3 flex flex-col shadow-sm">
+                        <div class="text-xs font-bold text-center bg-gray-100 p-1.5 mb-2 border border-gray-200">② 증권사별 분배</div>
+                        <div class="relative flex-1"><canvas id="brokerChart"></canvas></div>
+                    </div>
+                    <div class="border border-gray-300 p-3 flex flex-col shadow-sm">
+                        <div class="text-xs font-bold text-center bg-gray-100 p-1.5 mb-2 border border-gray-200">③ 통화별 노출도</div>
+                        <div class="relative flex-1"><canvas id="currencyChart"></canvas></div>
+                    </div>
+                    <div class="border border-gray-300 p-3 flex flex-col shadow-sm">
+                        <div class="text-xs font-bold text-center bg-gray-100 p-1.5 mb-2 border border-gray-200">④ 계좌성격별 (위탁/연금/ISA)</div>
+                        <div class="relative flex-1"><canvas id="accountTypeChart"></canvas></div>
+                    </div>
+                </div>
+
+                <!-- 주체별 손익 분석 테이블 -->
+                <div class="border border-gray-300 shadow-sm">
+                    <div class="bg-gray-100 px-3 py-2 text-sm font-bold border-b border-gray-200 flex justify-between items-center">
+                        <span>📑 계좌별 손익 분석</span>
+                        <span class="text-[11px] text-gray-500 font-normal">행 클릭 시 해당 시트로 이동</span>
+                    </div>
+                    <table class="excel-table">
+                        <thead>
+                            <tr>
+                                <th class="text-xs">계좌</th>
+                                <th class="text-xs">종목수</th>
+                                <th class="text-xs">매입금액(₩)</th>
+                                <th class="text-xs">평가금액(₩)</th>
+                                <th class="text-xs">평가손익(₩)</th>
+                                <th class="text-xs">수익률</th>
+                                <th class="text-xs">전체비중</th>
+                            </tr>
+                        </thead>
+                        <tbody id="analysisTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 그리드 -->
+            <div id="grid-view" class="w-full h-full bg-white border border-gray-400 shadow-sm overflow-auto">
+                <table class="excel-table min-w-max">
+                    <thead class="sticky top-0 z-10 shadow-sm">
+                        <tr>
+                            <th class="w-10 bg-[#f3f2f1] text-gray-500 font-mono text-[11px]">No.</th>
+                            <th class="p-0 w-60"><button onclick="handleSort('name')" class="sort-btn px-3 text-xs text-left"><span>종목명 (Ticker)</span><span class="sort-icon text-gray-400 text-[10px]" data-key="name">▼</span></button></th>
+                            <th class="p-0 w-32"><button onclick="handleSort('sheet')" class="sort-btn px-2 text-xs"><span>계좌</span><span class="sort-icon text-gray-400 text-[10px]" data-key="sheet">▼</span></button></th>
+                            <th class="p-0 w-24"><button onclick="handleSort('type')" class="sort-btn px-2 text-xs"><span>자산구분</span><span class="sort-icon text-gray-400 text-[10px]" data-key="type">▼</span></button></th>
+                            <th class="p-0 w-20"><button onclick="handleSort('qty')" class="sort-btn px-2 justify-end text-xs"><span class="sort-icon text-gray-400 text-[10px] mr-1" data-key="qty">▼</span><span>수량</span></button></th>
+                            <th class="w-16 text-xs font-bold text-gray-600 bg-gray-50">통화</th>
+                            <th class="p-0 w-28 bg-yellow-50"><button onclick="handleSort('currentPrice')" class="sort-btn px-2 justify-end text-xs bg-yellow-50"><span class="sort-icon text-gray-400 text-[10px] mr-1" data-key="currentPrice">▼</span><span class="text-orange-800">현재가</span></button></th>
+                            <th class="p-0 w-32"><button onclick="handleSort('buyAmount')" class="sort-btn px-2 justify-end text-xs"><span class="sort-icon text-gray-400 text-[10px] mr-1" data-key="buyAmount">▼</span><span>매입금액(₩)</span></button></th>
+                            <th class="p-0 w-32 bg-blue-50"><button onclick="handleSort('evalAmount')" class="sort-btn px-2 justify-end text-xs bg-blue-50"><span class="sort-icon text-gray-400 text-[10px] mr-1" data-key="evalAmount">▼</span><span class="text-blue-800 font-bold">평가금액(₩)</span></button></th>
+                            <th class="p-0 w-28"><button onclick="handleSort('profit')" class="sort-btn px-2 justify-end text-xs"><span class="sort-icon text-gray-400 text-[10px] mr-1" data-key="profit">▼</span><span>평가손익(₩)</span></button></th>
+                            <th class="p-0 w-24"><button onclick="handleSort('returnRate')" class="sort-btn px-2 justify-end text-xs"><span class="sort-icon text-gray-400 text-[10px] mr-1" data-key="returnRate">▼</span><span>수익률</span></button></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. 시트 탭 -->
+    <div class="sheet-tabs-container flex-shrink-0" id="sheetTabs">
+        <div class="sheet-tab active" data-sheet="Dashboard">🏠 통합 대시보드</div>
+        <div class="sheet-tab" data-sheet="All">📋 전체종목</div>
+        <div class="sheet-tab" data-sheet="Top10">🏆 수익률 TOP10</div>
+        <!-- 계좌 시트는 데이터 로드 후 동적 생성 -->
+    </div>
+
+    <!-- 5. 상태 표시줄 -->
+    <div class="bg-[#f3f2f1] border-t border-[#c6c6c6] px-3 py-1 flex justify-between items-center text-[11px] text-gray-600 flex-shrink-0 select-none">
+        <div class="flex items-center space-x-4">
+            <span id="status-indicator" class="flex items-center space-x-1">
+                <span class="w-2 h-2 bg-gray-400 rounded-full"></span><span class="font-bold text-gray-700">초기화 중...</span>
+            </span>
+            <span id="status-count" class="font-mono">-</span>
+        </div>
+        <div class="flex items-center space-x-4 font-mono">
+            <span id="status-sum" class="font-bold text-gray-800">합계: ₩0</span>
+            <span class="px-2 text-gray-400">|</span>
+            <span>Google Sheets 백엔드</span>
+        </div>
+    </div>
+
+    <!-- 종목 편집 모달 -->
+    <div id="editModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white border border-gray-400 shadow-2xl w-[480px] max-w-full">
+            <div class="bg-[#107c41] text-white px-4 py-2 text-sm font-bold flex justify-between items-center">
+                <span id="editModalTitle">종목 편집</span>
+                <button onclick="closeEdit()" class="hover:bg-white/20 px-2 font-bold">✕</button>
+            </div>
+            <div class="p-5 space-y-3 text-sm">
+                <input type="hidden" id="edit-id">
+                <div class="grid grid-cols-3 gap-3">
+                    <label class="block"><span class="text-gray-600 text-xs font-bold">소유자</span>
+                        <select id="edit-owner" class="modal-input mt-1">
+                            <option value="유재진">유재진</option>
+                            <option value="김희연">김희연</option>
+                            <option value="유태현">유태현</option>
+                            <option value="유해인">유해인</option>
+                            <option value="유지원">유지원</option>
+                            <option value="유앤김">유앤김</option>
+                        </select>
+                    </label>
+                    <label class="block"><span class="text-gray-600 text-xs font-bold">계좌</span><input id="edit-sheet" class="modal-input mt-1"></label>
+                    <label class="block"><span class="text-gray-600 text-xs font-bold">자산구분</span><input id="edit-type" class="modal-input mt-1" placeholder="국내주식/ETF..."></label>
+                </div>
+                <label class="block"><span class="text-gray-600 text-xs font-bold">종목명</span><input id="edit-name" class="modal-input mt-1"></label>
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="block"><span class="text-gray-600 text-xs font-bold">티커</span><input id="edit-ticker" class="modal-input mt-1"></label>
+                    <label class="block"><span class="text-gray-600 text-xs font-bold">GF 심볼 <span class="text-[10px] text-gray-400">(KRX:005930)</span></span><input id="edit-gfSymbol" class="modal-input mt-1"></label>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <label class="block"><span class="text-gray-600 text-xs font-bold">통화</span>
+                        <select id="edit-currency" class="modal-input mt-1">
+                            <option value="KRW">KRW</option>
+                            <option value="USD">USD</option>
+                            <option value="JPY">JPY</option>
+                        </select>
+                    </label>
+                    <label class="block"><span class="text-gray-600 text-xs font-bold">수량</span><input id="edit-qty" type="number" class="modal-input mt-1 text-right"></label>
+                    <label class="block"><span class="text-gray-600 text-xs font-bold">매입금액(₩)</span><input id="edit-buyAmount" type="number" class="modal-input mt-1 text-right"></label>
+                </div>
+                <div class="bg-gray-50 border border-gray-200 p-2 text-[11px] text-gray-600">
+                    💡 GF 심볼 예시 · 한국주식: <code class="bg-white px-1">KRX:005930</code> · 미국주식: <code class="bg-white px-1">AAPL</code> · 일본주식: <code class="bg-white px-1">TYO:9984</code> · 환율: <code class="bg-white px-1">CURRENCY:USDKRW</code>
+                </div>
+            </div>
+            <div class="bg-gray-100 p-3 flex justify-between border-t border-gray-300">
+                <button id="deleteBtn" onclick="deleteItem()" class="px-4 py-1.5 bg-red-50 border border-red-300 text-red-700 text-sm font-bold hover:bg-red-100">🗑️ 삭제</button>
+                <div class="flex gap-2">
+                    <button onclick="closeEdit()" class="px-4 py-1.5 bg-white border border-gray-400 text-sm font-bold hover:bg-gray-50">취소</button>
+                    <button onclick="saveItem()" class="px-6 py-1.5 bg-[#107c41] text-white border border-[#0a5a2f] text-sm font-bold hover:bg-[#0a5a2f]">💾 저장</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 사진 OCR 모달 -->
+    <div id="ocrModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white border border-gray-400 shadow-2xl w-[860px] max-w-full max-h-[92vh] flex flex-col">
+            <div class="bg-[#107c41] text-white px-4 py-2 text-sm font-bold flex justify-between items-center">
+                <span>📸 사진 OCR — 모바일 캡처본으로 포트폴리오 수정</span>
+                <button onclick="closeOcrModal()" class="hover:bg-white/20 px-2 font-bold">✕</button>
+            </div>
+            <div class="p-5 overflow-y-auto flex-1">
+                <!-- 1단계: OWNER + 계좌 선택 -->
+                <div class="mb-4 grid grid-cols-2 gap-3">
+                    <label class="block">
+                        <span class="text-gray-600 text-xs font-bold">📂 어느 사람의 포트폴리오?</span>
+                        <select id="ocr-owner" class="modal-input mt-1">
+                            <option value="유재진">유재진</option>
+                            <option value="김희연">김희연</option>
+                            <option value="유태현">유태현</option>
+                            <option value="유해인">유해인</option>
+                            <option value="유지원">유지원</option>
+                            <option value="유앤김">유앤김</option>
+                        </select>
+                    </label>
+                    <label class="block">
+                        <span class="text-gray-600 text-xs font-bold">📁 어느 계좌? (선택)</span>
+                        <input id="ocr-sheet" class="modal-input mt-1" placeholder="예: 한투_위탁, 삼성_퇴직연금 (비워두면 자동)">
+                    </label>
+                </div>
+
+                <!-- 2단계: 사진 업로드 -->
+                <div class="mb-4">
+                    <label class="block font-bold text-sm mb-2">📷 캡처 사진 업로드 (잔고/주문/거래내역 화면)</label>
+                    <div id="ocrDropZone" class="border-2 border-dashed border-gray-400 rounded p-6 text-center bg-gray-50 hover:bg-gray-100 cursor-pointer"
+                         ondragover="event.preventDefault(); this.classList.add('bg-yellow-50')"
+                         ondragleave="this.classList.remove('bg-yellow-50')"
+                         ondrop="handleOcrDrop(event)"
+                         onclick="document.getElementById('ocrFileInput').click()">
+                        <div class="text-3xl mb-2">📂</div>
+                        <div class="text-sm text-gray-600">클릭 또는 드래그 — 여러 장 가능 · 모바일: 사진 첨부 또는 카메라</div>
+                        <input id="ocrFileInput" type="file" accept="image/*" multiple capture="environment" class="hidden" onchange="handleOcrFiles(event.target.files)">
+                    </div>
+                </div>
+
+                <!-- 3단계: OCR 진행/결과 -->
+                <div id="ocrProgress" class="hidden mb-4 bg-blue-50 border-l-4 border-blue-400 p-3 text-xs">
+                    <div id="ocrStatus" class="font-bold text-blue-900">⏳ OCR 분석 중...</div>
+                    <div class="w-full bg-blue-200 rounded h-2 mt-2"><div id="ocrBar" class="bg-blue-600 h-2 rounded transition-all" style="width:0%"></div></div>
+                </div>
+
+                <div id="ocrResultSection" class="hidden">
+                    <label class="block font-bold text-sm mb-2">📝 추출된 텍스트 (편집 가능 — 정정 후 [텍스트 파싱])</label>
+                    <textarea id="ocrText" class="modal-input mt-1 h-48 font-mono text-[11px]" placeholder="OCR 결과가 여기에..."></textarea>
+                    <button onclick="parseOcrText()" class="mt-2 px-3 py-1.5 bg-[#107c41] text-white text-xs font-bold hover:bg-[#0a5a2f]">🔍 텍스트 파싱 → 종목 매칭</button>
+                </div>
+
+                <!-- 4단계: 매칭 결과 -->
+                <div id="ocrMatchSection" class="hidden mt-4">
+                    <label class="block font-bold text-sm mb-2">✨ 매칭 결과 (체크된 항목만 반영)</label>
+                    <div class="border border-gray-300 max-h-72 overflow-auto">
+                        <table class="excel-table w-full text-[11px]" id="ocrMatchTable"></table>
+                    </div>
+                    <div id="ocrMatchStats" class="text-xs text-gray-700 mt-2"></div>
+                </div>
+            </div>
+            <div class="bg-gray-100 p-3 flex justify-between border-t border-gray-300">
+                <button onclick="closeOcrModal()" class="px-4 py-1.5 bg-white border border-gray-400 text-sm font-bold hover:bg-gray-50">취소</button>
+                <button id="ocrApplyBtn" onclick="applyOcrUpdates()" disabled class="px-6 py-1.5 bg-[#107c41] text-white border border-[#0a5a2f] text-sm font-bold hover:bg-[#0a5a2f] disabled:opacity-50 disabled:cursor-not-allowed">💾 시트에 일괄 반영</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 엑셀 가져오기 모달 -->
+    <div id="importModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white border border-gray-400 shadow-2xl w-[760px] max-w-full max-h-[90vh] flex flex-col">
+            <div class="bg-[#107c41] text-white px-4 py-2 text-sm font-bold flex justify-between items-center">
+                <span>📥 엑셀/CSV 일괄 가져오기</span>
+                <button onclick="closeImportModal()" class="hover:bg-white/20 px-2 font-bold">✕</button>
+            </div>
+            <div class="p-5 overflow-y-auto flex-1">
+                <!-- 1단계: 템플릿 다운로드 -->
+                <div class="mb-4 bg-blue-50 border-l-4 border-blue-400 p-3 text-xs leading-relaxed">
+                    <b class="text-blue-900">📋 1단계 — 표준 템플릿 사용 권장</b><br>
+                    아래 버튼을 눌러 표준 엑셀 템플릿을 다운로드 → 종목 데이터 입력 → 다시 업로드하시면 가장 정확합니다.<br>
+                    <button onclick="downloadTemplate()" class="mt-2 px-3 py-1 bg-white border border-blue-300 text-blue-700 text-xs font-bold hover:bg-blue-100">
+                        📄 표준 템플릿 다운로드 (xlsx)
+                    </button>
+                </div>
+
+                <!-- 2단계: 파일 업로드 -->
+                <div class="mb-4">
+                    <label class="block font-bold text-sm mb-2">📤 2단계 — 파일 선택 (xlsx, xls, csv)</label>
+                    <div id="dropZone" class="border-2 border-dashed border-gray-400 rounded p-6 text-center bg-gray-50 hover:bg-gray-100 cursor-pointer"
+                         ondragover="event.preventDefault(); this.classList.add('bg-blue-50')"
+                         ondragleave="this.classList.remove('bg-blue-50')"
+                         ondrop="handleDrop(event)"
+                         onclick="document.getElementById('fileInput').click()">
+                        <div class="text-3xl mb-2">📂</div>
+                        <div class="text-sm text-gray-600">클릭 또는 파일을 여기로 드래그</div>
+                        <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleFile(event.target.files[0])">
+                    </div>
+                </div>
+
+                <!-- 3단계: 미리보기 -->
+                <div id="previewSection" class="hidden">
+                    <label class="block font-bold text-sm mb-2">👀 3단계 — 미리보기 (처음 5행)</label>
+                    <div class="border border-gray-300 overflow-auto max-h-60 mb-3">
+                        <table id="previewTable" class="excel-table w-full text-[11px]"></table>
+                    </div>
+                    <div id="importStats" class="text-xs text-gray-700 mb-3"></div>
+                </div>
+            </div>
+            <div class="bg-gray-100 p-3 flex justify-between border-t border-gray-300">
+                <button onclick="closeImportModal()" class="px-4 py-1.5 bg-white border border-gray-400 text-sm font-bold hover:bg-gray-50">취소</button>
+                <button id="importConfirmBtn" onclick="confirmImport()" disabled class="px-6 py-1.5 bg-[#107c41] text-white border border-[#0a5a2f] text-sm font-bold hover:bg-[#0a5a2f] disabled:opacity-50 disabled:cursor-not-allowed">📥 일괄 등록</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 다중선택 일괄작업 바 -->
+    <div id="bulkBar" class="fixed bottom-10 left-1/2 -translate-x-1/2 z-40 hidden bg-[#107c41] text-white px-4 py-2 rounded shadow-2xl flex items-center gap-3 text-sm">
+        <span id="bulkCount" class="font-bold">0개 선택</span>
+        <button onclick="bulkDelete()" class="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-xs font-bold">🗑️ 일괄 삭제</button>
+        <button onclick="clearBulkSelection()" class="px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-xs">선택 해제</button>
+    </div>
+
+    <!-- 설정 모달 -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white border border-gray-400 shadow-2xl w-[560px] max-w-full">
+            <div class="bg-[#107c41] text-white px-4 py-2 text-sm font-bold flex justify-between items-center">
+                <span>⚙️ Apps Script 연결 설정</span>
+                <button onclick="document.getElementById('settingsModal').classList.add('hidden')" class="hover:bg-white/20 px-2 font-bold">✕</button>
+            </div>
+            <div class="p-5 space-y-4 text-sm">
+                <div>
+                    <label class="block font-bold text-gray-700 mb-1">Web App URL</label>
+                    <input id="apiUrlInput" class="modal-input font-mono text-xs" placeholder="https://script.google.com/macros/s/XXXXX/exec">
+                    <div class="text-[11px] text-gray-500 mt-1">Apps Script [배포 &gt; 새 배포 &gt; 웹앱]에서 발급된 URL을 붙여넣으세요.</div>
+                </div>
+                <div class="bg-blue-50 border-l-4 border-blue-400 p-3 text-xs leading-relaxed">
+                    <b class="text-blue-900">🔗 어디서든 동일하게 작동합니다.</b><br>
+                    이 HTML을 USB·이메일·구글드라이브 등 어떤 경로로 옮겨도 <b>같은 URL</b>만 입력하면 모든 기기가 동일한 데이터를 봅니다. 모바일은 Google Drive 또는 GitHub Pages에 올려서 사용하세요.
+                </div>
+            </div>
+            <div class="bg-gray-100 p-3 flex justify-end gap-2 border-t border-gray-300">
+                <button onclick="document.getElementById('settingsModal').classList.add('hidden')" class="px-4 py-1.5 bg-white border border-gray-400 text-sm font-bold hover:bg-gray-50">취소</button>
+                <button onclick="saveSettings()" class="px-6 py-1.5 bg-[#107c41] text-white border border-[#0a5a2f] text-sm font-bold hover:bg-[#0a5a2f]">저장 후 동기화</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 토스트 -->
+    <div id="toast" class="fixed bottom-10 right-6 z-50 hidden">
+        <div class="bg-gray-800 text-white px-5 py-3 rounded shadow-2xl text-sm font-bold" id="toastMsg"></div>
+    </div>
+
+<script>
+// ===============================================================
+//   설정: Google Apps Script Web App URL (설정 모달에서 변경 가능)
+//   기본값은 yjjn2005@gmail.com 시트에 자동 연결됨
+// ===============================================================
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxgFkI6QDZtW2wBlwF2j6Ttnoaj5m1nXoopf8HP_5LI3nuEi6t1FM7GhC_-h-OHI_cZ_w/exec';
+let API_URL = localStorage.getItem('portfolio_api_url') || DEFAULT_API_URL;
+
+let portfolioData = [];
+let currentData   = [];
+let searchTerm    = '';
+let sortConfig    = { key:'evalAmount', dir:'desc' };
+let currentActiveSheet = 'Dashboard';
+let currentOwner  = localStorage.getItem('portfolio_owner') || '유재진';
+let exchangeRates = { USD: 1350, JPY: 8.95 };
+let tChart = null, bChart = null, cChart = null, atChart = null;
+
+function changeOwner(owner) {
+    currentOwner = owner;
+    localStorage.setItem('portfolio_owner', owner);
+    currentActiveSheet = 'Dashboard';
+    buildSheetTabs();
+    applyUpdates();
+}
+
+function getFilteredByOwner() {
+    if (currentOwner === 'ALL') return portfolioData;
+    return portfolioData.filter(i => (i.owner || '유재진') === currentOwner);
+}
+
+// 계좌 성격 자동 분류
+function classifyAccountType(sheet) {
+    if (!sheet) return '기타';
+    if (sheet.includes('IRP')) return 'IRP';
+    if (sheet.includes('ISA')) return 'ISA';
+    if (sheet.includes('연금저축')) return '연금저축';
+    if (sheet.includes('퇴직연금')) return '퇴직연금';
+    if (sheet.includes('법인')) return '법인';
+    if (sheet.includes('위탁')) return '위탁';
+    return '기타';
+}
+
+// ===== 유틸 =====
+const fmtNum   = v => new Intl.NumberFormat('ko-KR').format(Math.round(v||0));
+const fmtPrice = (v, cur) => {
+    if (!v) return '-';
+    if (cur === 'USD') return '$' + Number(v).toFixed(2);
+    if (cur === 'JPY') return '¥' + Math.round(v);
+    return '₩' + new Intl.NumberFormat('ko-KR').format(Math.round(v));
+};
+const fmtPct  = v => (v > 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+const clr     = v => v > 0 ? 'up-color' : (v < 0 ? 'down-color' : '');
+const toast   = (msg, ok=true) => {
+    const t = document.getElementById('toast'), m = document.getElementById('toastMsg');
+    m.textContent = msg;
+    t.firstElementChild.className = `${ok?'bg-gray-800':'bg-red-700'} text-white px-5 py-3 rounded shadow-2xl text-sm font-bold`;
+    t.classList.remove('hidden');
+    setTimeout(() => t.classList.add('hidden'), 3500);
+};
+
+// ===== API =====
+async function apiGet() {
+    if (!API_URL) throw new Error('API_URL 미설정 — 우측 상단 ⚙️ 에서 입력하세요');
+    const r = await fetch(API_URL + '?t=' + Date.now(), { method:'GET' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+}
+
+async function apiPost(body) {
+    if (!API_URL) throw new Error('API_URL 미설정');
+    // Content-Type 미설정 → simple request → CORS preflight 회피
+    const r = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        redirect: 'follow'
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+}
+
+// ===== 메인 fetch =====
+async function fetchData(showLoading = false) {
+    const btn = document.getElementById('syncBtn');
+    const icon = document.getElementById('syncIcon');
+    const txt = document.getElementById('syncText');
+    const sync = document.getElementById('lastSyncTime');
+    const indicator = document.getElementById('status-indicator');
+
+    if (showLoading) {
+        btn.disabled = true;
+        icon.style.animation = 'spin 1s linear infinite';
+        txt.textContent = '동기화 중...';
+        sync.innerHTML = '<span class="text-blue-300 font-bold">● 연결 중...</span>';
+        indicator.innerHTML = '<span class="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span><span class="font-bold text-gray-700">Google Sheets 동기화 중...</span>';
+    }
+
+    try {
+        const data = await apiGet();
+        if (!data.success) throw new Error(data.error || 'API 오류');
+
+        portfolioData = data.portfolio;
+        exchangeRates = data.rates;
+
+        document.getElementById('rateUSD').textContent = new Intl.NumberFormat('ko-KR').format(Math.round(exchangeRates.USD));
+        document.getElementById('rateJPY').textContent = Number(exchangeRates.JPY).toFixed(2);
+
+        const ts = new Date();
+        const tStr = `${String(ts.getHours()).padStart(2,'0')}:${String(ts.getMinutes()).padStart(2,'0')}:${String(ts.getSeconds()).padStart(2,'0')}`;
+        sync.innerHTML = `<span class="text-green-300 font-bold">● LIVE</span> <span class="text-white/80">${tStr}</span>`;
+        indicator.innerHTML = '<span class="w-2 h-2 bg-green-500 rounded-full"></span><span class="font-bold text-gray-700">실시간 연결됨</span>';
+        document.getElementById('header-stats').textContent = `${portfolioData.length}개 종목 · Google Sheets 동기화`;
+
+        // 시트 탭 동적 생성
+        buildSheetTabs();
+        applyUpdates();
+        localStorage.setItem('portfolio_cache', JSON.stringify({ portfolioData, exchangeRates, ts: Date.now() }));
+
+        if (showLoading) toast(`✅ 동기화 완료 — ${portfolioData.length}개 종목 갱신`);
+    } catch (err) {
+        console.error(err);
+        sync.innerHTML = `<span class="text-red-300 font-bold">● 오류</span>`;
+        indicator.innerHTML = '<span class="w-2 h-2 bg-red-500 rounded-full"></span><span class="font-bold text-red-700">동기화 실패</span>';
+        // 캐시 로드
+        const cache = localStorage.getItem('portfolio_cache');
+        if (cache) {
+            const c = JSON.parse(cache);
+            portfolioData = c.portfolioData;
+            exchangeRates = c.exchangeRates;
+            buildSheetTabs();
+            applyUpdates();
+            toast(`⚠️ 오프라인 캐시 사용 — ${err.message}`, false);
+        } else {
+            toast(`❌ ${err.message}`, false);
+        }
+    } finally {
+        if (showLoading) {
+            btn.disabled = false;
+            icon.style.animation = '';
+            txt.textContent = '⚡ Google Sheets 동기화';
+        }
+    }
+}
+
+// ===== 시트 탭 동적 생성 =====
+function buildSheetTabs() {
+    const container = document.getElementById('sheetTabs');
+    // 고정 탭 3개 유지하고 나머지는 다시 그림
+    const fixedTabs = container.querySelectorAll('[data-sheet="Dashboard"], [data-sheet="All"], [data-sheet="Top10"]');
+    container.innerHTML = '';
+    fixedTabs.forEach(t => container.appendChild(t));
+
+    const sheets = [...new Set(getFilteredByOwner().map(i => i.sheet))].sort();
+    sheets.forEach(s => {
+        const div = document.createElement('div');
+        div.className = 'sheet-tab';
+        div.dataset.sheet = s;
+        div.textContent = s;
+        container.appendChild(div);
+    });
+
+    container.querySelectorAll('.sheet-tab').forEach(tab => {
+        tab.onclick = () => changeSheet(tab.dataset.sheet, tab);
+        if (tab.dataset.sheet === currentActiveSheet) tab.classList.add('active');
+        else tab.classList.remove('active');
+    });
+}
+
+function changeSheet(sheetName, element) {
+    currentActiveSheet = sheetName;
+    document.querySelectorAll('.sheet-tab').forEach(t => t.classList.remove('active'));
+    element.classList.add('active');
+    if (sheetName === 'Dashboard') {
+        document.getElementById('dashboard-view').classList.add('active');
+        document.getElementById('grid-view').classList.remove('active');
+        document.getElementById('formulaBar').textContent = `=SUM('Portfolio'!평가금액)`;
+    } else {
+        document.getElementById('dashboard-view').classList.remove('active');
+        document.getElementById('grid-view').classList.add('active');
+        if (sheetName === 'All')        document.getElementById('formulaBar').textContent = `=FILTER('Portfolio', 조건)`;
+        else if (sheetName === 'Top10') document.getElementById('formulaBar').textContent = `=LARGE('Portfolio'!수익률, 10)`;
+        else                            document.getElementById('formulaBar').textContent = `=FILTER('Portfolio', 시트="${sheetName}")`;
+    }
+    applyUpdates();
+}
+
+function applyUpdates() {
+    let filtered = getFilteredByOwner();  // OWNER 필터 1차
+    if (currentActiveSheet === 'Top10') {
+        filtered.sort((a,b) => b.returnRate - a.returnRate);
+        filtered = filtered.slice(0,10);
+    } else if (currentActiveSheet !== 'Dashboard' && currentActiveSheet !== 'All') {
+        filtered = filtered.filter(i => i.sheet === currentActiveSheet);
+    }
+    if (searchTerm) {
+        const s = searchTerm.toLowerCase();
+        filtered = filtered.filter(i =>
+            (i.name||'').toLowerCase().includes(s) ||
+            (i.ticker||'').toLowerCase().includes(s) ||
+            (i.sheet||'').toLowerCase().includes(s)
+        );
+    }
+    if (currentActiveSheet !== 'Top10') {
+        filtered.sort((a,b) => {
+            const vA = a[sortConfig.key], vB = b[sortConfig.key];
+            if (typeof vA === 'string') return sortConfig.dir === 'asc' ? vA.localeCompare(vB) : vB.localeCompare(vA);
+            return sortConfig.dir === 'asc' ? (vA - vB) : (vB - vA);
+        });
+    }
+    currentData = filtered;
+    updateSortIcons();
+    if (currentActiveSheet === 'Dashboard') { renderDashboardSummary(); renderCharts(); }
+    else renderGridTable();
+    updateStatusBar();
+}
+
+function renderGridTable() {
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = '';
+    if (currentData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center py-12 text-gray-500 font-bold bg-gray-50 text-sm">해당 시트에 데이터가 없습니다.</td></tr>`;
+        return;
+    }
+    currentData.forEach((item,i) => {
+        const tr = document.createElement('tr');
+        const isLive = item.currentPrice > 0 && item.gfSymbol;
+        if (bulkMode) {
+            tr.onclick = (e) => {
+                if (e.target.type === 'checkbox') return;
+                const cb = tr.querySelector('input[type=checkbox]');
+                if (cb) { cb.checked = !cb.checked; toggleBulkItem(item.id, cb.checked); }
+            };
+        } else {
+            tr.onclick = () => openEdit(item);
+        }
+        const checkboxCell = bulkMode
+            ? `<td class="text-center bg-[#e6e6e6] border-r-2 border-r-gray-300"><input type="checkbox" ${bulkSelectedIds.has(item.id)?'checked':''} onchange="toggleBulkItem(${item.id}, this.checked)" onclick="event.stopPropagation()"></td>`
+            : `<td class="text-center text-gray-500 bg-[#e6e6e6] font-mono text-[11px] border-r-2 border-r-gray-300">${i+1}</td>`;
+        tr.innerHTML = `
+            ${checkboxCell}
+            <td class="font-bold text-gray-800">${item.name} <span class="text-[10px] text-gray-400 ml-1.5 font-normal">${item.ticker||''}</span>${isLive?'<span class="ml-1 text-[9px] text-green-600 font-bold bg-green-50 px-1 rounded">LIVE</span>':''}</td>
+            <td class="text-blue-700 text-xs font-bold">${item.sheet}</td>
+            <td class="text-center text-xs text-gray-600">${item.type}</td>
+            <td class="text-right font-mono text-gray-800">${fmtNum(item.qty)}</td>
+            <td class="text-center text-[10px] text-gray-500 font-mono font-bold">${item.currency}</td>
+            <td class="text-right font-mono font-bold text-orange-800 bg-yellow-50/40">${fmtPrice(item.currentPrice, item.currency)}</td>
+            <td class="text-right font-mono text-gray-600">${fmtNum(item.buyAmount)}</td>
+            <td class="text-right font-mono font-bold text-blue-900 bg-blue-50/40">${fmtNum(item.evalAmount)}</td>
+            <td class="text-right font-mono font-bold ${clr(item.profit)}">${fmtNum(item.profit)}</td>
+            <td class="text-right font-mono font-bold text-sm tracking-tight ${clr(item.returnRate)}">${fmtPct(item.returnRate)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function renderDashboardSummary() {
+    const data = getFilteredByOwner();
+    const tBuy   = data.reduce((s,i) => s + (i.buyAmount||0), 0);
+    const tEval  = data.reduce((s,i) => s + (i.evalAmount||0), 0);
+    const tProf  = tEval - tBuy;
+    const tRate  = tBuy === 0 ? 0 : (tProf/tBuy)*100;
+    document.getElementById('dash-buy').textContent   = `₩${fmtNum(tBuy)}`;
+    document.getElementById('dash-eval').textContent  = `₩${fmtNum(tEval)}`;
+    const pEl = document.getElementById('dash-profit');
+    pEl.textContent = `₩${fmtNum(tProf)}`;
+    pEl.className   = `text-2xl font-bold font-mono ${clr(tProf)}`;
+    const rEl = document.getElementById('dash-rate');
+    rEl.textContent = fmtPct(tRate);
+    rEl.className   = `text-2xl font-bold font-mono ${clr(tRate)}`;
+    const accCount = new Set(data.map(i => i.sheet)).size;
+    const ownerLabel = currentOwner === 'ALL' ? '전체 합산' : currentOwner;
+    document.getElementById('dash-meta').textContent = `[${ownerLabel}] ${accCount}계좌 · ${data.length}개 종목`;
+}
+
+function renderCharts() {
+    const typeMap = {}, brokerMap = {}, currencyMap = {}, accountTypeMap = {};
+    getFilteredByOwner().forEach(item => {
+        const tKey = item.type && item.type.includes('ETF') ? 'ETF' : (item.type || '기타');
+        typeMap[tKey] = (typeMap[tKey]||0) + (item.evalAmount||0);
+        const bKey = (item.sheet||'').split('_')[0] || '기타';
+        brokerMap[bKey] = (brokerMap[bKey]||0) + (item.evalAmount||0);
+        const cKey = item.currency || 'KRW';
+        currencyMap[cKey] = (currencyMap[cKey]||0) + (item.evalAmount||0);
+        const aKey = classifyAccountType(item.sheet);
+        accountTypeMap[aKey] = (accountTypeMap[aKey]||0) + (item.evalAmount||0);
+    });
+
+    const COLORS = ['#4472C4','#ED7D31','#A5A5A5','#FFC000','#5B9BD5','#70AD47','#264478','#9E480E','#636363','#997300'];
+    Chart.defaults.font.family = '"Malgun Gothic", sans-serif';
+
+    const baseOpts = {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+            legend:{ position:'right', labels:{ boxWidth:10, font:{ size:10 }, padding:6 } },
+            tooltip:{
+                callbacks:{
+                    label: ctx => {
+                        const sum = ctx.dataset.data.reduce((a,b)=>a+b,0);
+                        const pct = sum ? (ctx.parsed/sum*100).toFixed(1) : 0;
+                        return `${ctx.label}: ₩${fmtNum(ctx.parsed)} (${pct}%)`;
+                    }
+                }
+            }
+        }
+    };
+
+    if (tChart) tChart.destroy();
+    tChart = new Chart(document.getElementById('typeChart'), {
+        type:'doughnut',
+        data:{ labels:Object.keys(typeMap), datasets:[{ data:Object.values(typeMap), backgroundColor:COLORS, borderWidth:1 }] },
+        options: baseOpts
+    });
+
+    if (bChart) bChart.destroy();
+    bChart = new Chart(document.getElementById('brokerChart'), {
+        type:'pie',
+        data:{ labels:Object.keys(brokerMap), datasets:[{ data:Object.values(brokerMap), backgroundColor:COLORS.slice().reverse(), borderWidth:1 }] },
+        options: baseOpts
+    });
+
+    if (cChart) cChart.destroy();
+    cChart = new Chart(document.getElementById('currencyChart'), {
+        type:'doughnut',
+        data:{ labels:Object.keys(currencyMap), datasets:[{ data:Object.values(currencyMap), backgroundColor:['#4472C4','#ED7D31','#70AD47'], borderWidth:1 }] },
+        options: baseOpts
+    });
+
+    if (atChart) atChart.destroy();
+    atChart = new Chart(document.getElementById('accountTypeChart'), {
+        type:'pie',
+        data:{ labels:Object.keys(accountTypeMap), datasets:[{ data:Object.values(accountTypeMap), backgroundColor:['#264478','#5B9BD5','#FFC000','#70AD47','#9E480E','#A5A5A5','#636363'], borderWidth:1 }] },
+        options: baseOpts
+    });
+
+    renderAnalysisTable();
+}
+
+function renderAnalysisTable() {
+    const tbody = document.getElementById('analysisTableBody');
+    if (!tbody) return;
+    const grouped = {};
+    const data = getFilteredByOwner();
+    data.forEach(item => {
+        const k = item.sheet || '기타';
+        if (!grouped[k]) grouped[k] = { count:0, buy:0, eval:0 };
+        grouped[k].count += 1;
+        grouped[k].buy   += item.buyAmount || 0;
+        grouped[k].eval  += item.evalAmount || 0;
+    });
+    const totalEval = data.reduce((s,i) => s + (i.evalAmount||0), 0) || 1;
+    const rows = Object.entries(grouped)
+        .map(([sheet, v]) => ({
+            sheet, count:v.count, buy:v.buy, evalAmt:v.eval,
+            profit: v.eval - v.buy,
+            rate: v.buy ? ((v.eval - v.buy)/v.buy)*100 : 0,
+            weight: (v.eval/totalEval)*100
+        }))
+        .sort((a,b) => b.evalAmt - a.evalAmt);
+
+    tbody.innerHTML = '';
+    rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.onclick = () => {
+            const tab = document.querySelector(`.sheet-tab[data-sheet="${r.sheet}"]`);
+            if (tab) tab.click();
+        };
+        tr.innerHTML = `
+            <td class="font-bold text-blue-700">${r.sheet}</td>
+            <td class="text-right font-mono">${r.count}</td>
+            <td class="text-right font-mono text-gray-600">${fmtNum(r.buy)}</td>
+            <td class="text-right font-mono font-bold text-blue-900">${fmtNum(r.evalAmt)}</td>
+            <td class="text-right font-mono font-bold ${clr(r.profit)}">${fmtNum(r.profit)}</td>
+            <td class="text-right font-mono font-bold ${clr(r.rate)}">${fmtPct(r.rate)}</td>
+            <td class="text-right font-mono text-gray-700">${r.weight.toFixed(1)}%</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    // 합계 행
+    const sum = rows.reduce((acc, r) => ({
+        count: acc.count + r.count,
+        buy:   acc.buy + r.buy,
+        eval:  acc.eval + r.evalAmt
+    }), { count:0, buy:0, eval:0 });
+    const sumProfit = sum.eval - sum.buy;
+    const sumRate   = sum.buy ? (sumProfit/sum.buy)*100 : 0;
+    const tr = document.createElement('tr');
+    tr.style.cssText = 'background:#f3f2f1;font-weight:bold;border-top:2px solid #107c41';
+    tr.innerHTML = `
+        <td class="text-[#107c41] font-bold">합계</td>
+        <td class="text-right font-mono">${sum.count}</td>
+        <td class="text-right font-mono">${fmtNum(sum.buy)}</td>
+        <td class="text-right font-mono text-blue-900">${fmtNum(sum.eval)}</td>
+        <td class="text-right font-mono ${clr(sumProfit)}">${fmtNum(sumProfit)}</td>
+        <td class="text-right font-mono ${clr(sumRate)}">${fmtPct(sumRate)}</td>
+        <td class="text-right font-mono">100.0%</td>
+    `;
+    tbody.appendChild(tr);
+}
+
+// ===== 정렬·검색 =====
+function handleSort(key) {
+    if (currentActiveSheet === 'Top10') return;
+    if (sortConfig.key === key) sortConfig.dir = sortConfig.dir === 'desc' ? 'asc' : 'desc';
+    else { sortConfig.key = key; sortConfig.dir = 'desc'; }
+    applyUpdates();
+}
+function updateSortIcons() {
+    document.querySelectorAll('.sort-icon').forEach(icon => {
+        if (icon.dataset.key === sortConfig.key) {
+            icon.innerHTML = sortConfig.dir === 'desc' ? '▼' : '▲';
+            icon.classList.remove('text-gray-400'); icon.classList.add('text-black','scale-110');
+        } else {
+            icon.innerHTML = '▼';
+            icon.classList.remove('text-black','scale-110'); icon.classList.add('text-gray-400');
+        }
+    });
+}
+function resetAll() {
+    document.getElementById('searchInput').value = '';
+    searchTerm = '';
+    sortConfig = { key:'evalAmount', dir:'desc' };
+    applyUpdates();
+}
+function updateStatusBar() {
+    const cnt = currentActiveSheet === 'Dashboard' ? portfolioData.length : currentData.length;
+    const sum = (currentActiveSheet === 'Dashboard' ? portfolioData : currentData).reduce((a,i) => a + (i.evalAmount||0), 0);
+    document.getElementById('status-count').innerHTML = `<b>${cnt}개</b> 종목 표출 (총 ${portfolioData.length}개)`;
+    document.getElementById('status-sum').textContent = `현재 시트 합계: ₩${fmtNum(sum)}`;
+}
+
+document.getElementById('searchInput').addEventListener('input', e => {
+    searchTerm = e.target.value;
+    applyUpdates();
+});
+
+// ===== 편집 모달 =====
+function openEdit(item) {
+    document.getElementById('editModalTitle').textContent = `편집: ${item.name}`;
+    document.getElementById('edit-id').value         = item.id;
+    document.getElementById('edit-owner').value      = item.owner || '유재진';
+    document.getElementById('edit-sheet').value      = item.sheet || '';
+    document.getElementById('edit-name').value       = item.name || '';
+    document.getElementById('edit-ticker').value     = item.ticker || '';
+    document.getElementById('edit-gfSymbol').value   = item.gfSymbol || '';
+    document.getElementById('edit-type').value       = item.type || '';
+    document.getElementById('edit-currency').value   = item.currency || 'KRW';
+    document.getElementById('edit-qty').value        = item.qty || 0;
+    document.getElementById('edit-buyAmount').value  = item.buyAmount || 0;
+    document.getElementById('deleteBtn').style.display = 'block';
+    document.getElementById('editModal').classList.remove('hidden');
+}
+
+function addNewItem() {
+    document.getElementById('editModalTitle').textContent = '새 종목 추가';
+    document.getElementById('edit-id').value         = '';
+    document.getElementById('edit-owner').value      = currentOwner === 'ALL' ? '유재진' : currentOwner;
+    document.getElementById('edit-sheet').value      = currentActiveSheet !== 'Dashboard' && currentActiveSheet !== 'All' && currentActiveSheet !== 'Top10' ? currentActiveSheet : '';
+    document.getElementById('edit-name').value       = '';
+    document.getElementById('edit-ticker').value     = '';
+    document.getElementById('edit-gfSymbol').value   = '';
+    document.getElementById('edit-type').value       = '국내주식';
+    document.getElementById('edit-currency').value   = 'KRW';
+    document.getElementById('edit-qty').value        = 0;
+    document.getElementById('edit-buyAmount').value  = 0;
+    document.getElementById('deleteBtn').style.display = 'none';
+    document.getElementById('editModal').classList.remove('hidden');
+}
+
+function closeEdit() { document.getElementById('editModal').classList.add('hidden'); }
+
+async function saveItem() {
+    const id = document.getElementById('edit-id').value;
+    const payload = {
+        owner:     document.getElementById('edit-owner').value,
+        sheet:     document.getElementById('edit-sheet').value.trim(),
+        name:      document.getElementById('edit-name').value.trim(),
+        ticker:    document.getElementById('edit-ticker').value.trim(),
+        gfSymbol:  document.getElementById('edit-gfSymbol').value.trim(),
+        type:      document.getElementById('edit-type').value.trim(),
+        currency:  document.getElementById('edit-currency').value,
+        qty:       Number(document.getElementById('edit-qty').value) || 0,
+        buyAmount: Number(document.getElementById('edit-buyAmount').value) || 0,
+    };
+    try {
+        if (id) {
+            await apiPost({ action:'update', id: Number(id), updates: payload });
+            toast('✅ 수정 완료 — 모든 기기에 반영됨');
+        } else {
+            await apiPost({ action:'add', data: payload });
+            toast('✅ 추가 완료');
+        }
+        closeEdit();
+        await fetchData(true);
+    } catch (err) {
+        toast(`❌ 저장 실패: ${err.message}`, false);
+    }
+}
+
+async function deleteItem() {
+    const id = document.getElementById('edit-id').value;
+    if (!id) return;
+    if (!confirm('이 종목을 삭제하시겠습니까? (모든 기기에서 사라집니다)')) return;
+    try {
+        await apiPost({ action:'delete', id: Number(id) });
+        toast('🗑️ 삭제 완료');
+        closeEdit();
+        await fetchData(true);
+    } catch (err) {
+        toast(`❌ 삭제 실패: ${err.message}`, false);
+    }
+}
+
+// ===== 설정 =====
+function openSettings() {
+    document.getElementById('apiUrlInput').value = API_URL;
+    document.getElementById('settingsModal').classList.remove('hidden');
+}
+function saveSettings() {
+    const url = document.getElementById('apiUrlInput').value.trim();
+    if (!url) { alert('URL을 입력하세요'); return; }
+    if (!url.includes('script.google.com')) {
+        if (!confirm('Apps Script URL이 아닌 것 같습니다. 그래도 저장할까요?')) return;
+    }
+    API_URL = url;
+    localStorage.setItem('portfolio_api_url', url);
+    document.getElementById('settingsModal').classList.add('hidden');
+    fetchData(true);
+}
+
+// ============================================================
+// 📸 사진 OCR (Tesseract.js — 한국어/영어 자동 인식)
+// 모바일 캡처본의 종목명·수량·매수단가·금액·평가금액을 추출하여 시트 업데이트
+// ============================================================
+let ocrMatches = [];
+
+function openOcrModal() {
+    ocrMatches = [];
+    document.getElementById('ocr-owner').value = currentOwner === 'ALL' ? '유재진' : currentOwner;
+    document.getElementById('ocr-sheet').value = '';
+    document.getElementById('ocrFileInput').value = '';
+    document.getElementById('ocrText').value = '';
+    document.getElementById('ocrProgress').classList.add('hidden');
+    document.getElementById('ocrResultSection').classList.add('hidden');
+    document.getElementById('ocrMatchSection').classList.add('hidden');
+    document.getElementById('ocrApplyBtn').disabled = true;
+    document.getElementById('ocrModal').classList.remove('hidden');
+}
+function closeOcrModal() { document.getElementById('ocrModal').classList.add('hidden'); }
+
+function handleOcrDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('bg-yellow-50');
+    handleOcrFiles(e.dataTransfer.files);
+}
+
+async function handleOcrFiles(files) {
+    if (!files || files.length === 0) return;
+    document.getElementById('ocrProgress').classList.remove('hidden');
+    document.getElementById('ocrResultSection').classList.add('hidden');
+    document.getElementById('ocrMatchSection').classList.add('hidden');
+    document.getElementById('ocrStatus').textContent = `⏳ ${files.length}장 OCR 처리 중...`;
+
+    let allText = '';
+    for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        document.getElementById('ocrStatus').textContent = `⏳ ${i+1}/${files.length} 처리 중 — ${f.name}`;
+        try {
+            const result = await Tesseract.recognize(f, 'kor+eng', {
+                logger: m => {
+                    if (m.status === 'recognizing text') {
+                        const pct = Math.round(m.progress * 100);
+                        document.getElementById('ocrBar').style.width = `${(i + m.progress) / files.length * 100}%`;
+                        document.getElementById('ocrStatus').textContent = `⏳ ${i+1}/${files.length} ${m.status} ${pct}%`;
+                    }
+                }
+            });
+            allText += '\n===== 이미지 ' + (i+1) + ' =====\n' + result.data.text;
+        } catch (err) {
+            allText += '\n===== 이미지 ' + (i+1) + ' (오류) =====\n' + err.message;
+        }
+    }
+    document.getElementById('ocrText').value = allText.trim();
+    document.getElementById('ocrProgress').classList.add('hidden');
+    document.getElementById('ocrResultSection').classList.remove('hidden');
+    document.getElementById('ocrStatus').textContent = `✅ ${files.length}장 OCR 완료`;
+    parseOcrText();
+}
+
+function parseOcrText() {
+    const text = document.getElementById('ocrText').value;
+    const owner = document.getElementById('ocr-owner').value;
+    const sheetHint = document.getElementById('ocr-sheet').value.trim();
+    if (!text.trim()) { toast('❌ OCR 텍스트가 비어있음', false); return; }
+
+    // 줄 단위 파싱 — 종목명 + 숫자들
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const candidates = [];
+    let pendingName = '';
+
+    for (const line of lines) {
+        // 종목명 후보 — 한글/영문 4자 이상, 숫자 비율 낮음
+        const hasKorOrEng = /[가-힯]|[A-Za-z]{2,}/.test(line);
+        const digits = (line.match(/[\d,.]/g) || []).length;
+        const isMostlyDigits = digits > line.length * 0.5;
+
+        if (hasKorOrEng && !isMostlyDigits && line.length >= 2 && line.length < 80) {
+            // 종목명 라인 후보
+            const cleanName = line.replace(/^\d+[\s.|)]*/, '').replace(/[│|]/g, '').trim();
+            if (cleanName.length >= 2 && /[가-힯가-힣A-Za-z]/.test(cleanName)) {
+                pendingName = (pendingName + ' ' + cleanName).trim();
+            }
+        }
+        if (isMostlyDigits && pendingName) {
+            // 숫자 라인 — 종목명에 이어서 등장
+            const nums = line.match(/[\d,]+(?:\.\d+)?/g) || [];
+            const nlist = nums.map(n => Number(n.replace(/,/g, ''))).filter(n => !isNaN(n) && n > 0);
+            if (nlist.length >= 1) {
+                candidates.push({ name: pendingName, nums: nlist });
+                pendingName = '';
+            }
+        }
+    }
+
+    // 후보 종목들을 시트의 owner 종목과 매칭
+    const ownerStocks = portfolioData.filter(p => (p.owner || '유재진') === owner);
+    ocrMatches = [];
+    for (const c of candidates) {
+        const matched = findBestMatch(c.name, ownerStocks);
+        if (matched) {
+            // 숫자들 중 가장 큰 것이 매수금액 또는 평가금액일 가능성
+            const sortedNums = [...c.nums].sort((a, b) => b - a);
+            const guess = guessFromNumbers(sortedNums, matched);
+            ocrMatches.push({
+                name: c.name,
+                stockId: matched.id,
+                stockName: matched.name,
+                stockSheet: matched.sheet,
+                currentQty: matched.qty,
+                currentBuy: matched.buyAmount,
+                newQty: guess.qty,
+                newBuy: guess.buyAmount,
+                newEval: guess.evalAmount,
+                selected: true,
+                isNew: false
+            });
+        } else {
+            // 매칭 안 됨 — 새 종목 후보로 표시
+            const sortedNums = [...c.nums].sort((a, b) => b - a);
+            ocrMatches.push({
+                name: c.name,
+                stockId: null,
+                stockName: '(시스템에 없음)',
+                stockSheet: sheetHint || '한투_위탁',
+                currentQty: 0,
+                currentBuy: 0,
+                newQty: sortedNums[2] || sortedNums[0] || 0,
+                newBuy: sortedNums[0] || 0,
+                newEval: sortedNums[1] || sortedNums[0] || 0,
+                selected: false,
+                isNew: true
+            });
+        }
+    }
+    renderOcrMatchTable();
+}
+
+function findBestMatch(ocrName, stocks) {
+    // 단순 substring 매칭 + 토큰 매칭
+    const ocrLower = ocrName.toLowerCase().replace(/[\s().,\-_]/g, '');
+    let best = null;
+    let bestScore = 0;
+    for (const s of stocks) {
+        const stockLower = (s.name || '').toLowerCase().replace(/[\s().,\-_]/g, '');
+        if (stockLower.length === 0) continue;
+        let score = 0;
+        if (stockLower.includes(ocrLower) || ocrLower.includes(stockLower)) score += 50;
+        // 공통 부분문자열 길이
+        for (let len = 3; len <= Math.min(ocrLower.length, stockLower.length); len++) {
+            for (let i = 0; i <= ocrLower.length - len; i++) {
+                if (stockLower.includes(ocrLower.substr(i, len))) score += len;
+            }
+        }
+        if (score > bestScore && score >= 10) {
+            best = s; bestScore = score;
+        }
+    }
+    return best;
+}
+
+function guessFromNumbers(sortedDesc, matched) {
+    // 매수금액(가장 큰 값) ≈ buyAmount, 평가금액 = 두 번째, 수량 = 작은 값
+    return {
+        buyAmount: sortedDesc[0] || matched.buyAmount,
+        evalAmount: sortedDesc[1] || sortedDesc[0] || 0,
+        qty: sortedDesc.length >= 3 ? sortedDesc[sortedDesc.length-1] : matched.qty
+    };
+}
+
+function renderOcrMatchTable() {
+    const tbl = document.getElementById('ocrMatchTable');
+    const head = `<thead><tr>
+        <th>적용</th><th>OCR 종목명</th><th>시스템 매칭</th><th>계좌</th>
+        <th>새 수량</th><th>새 매입금액</th><th>새 평가금액</th><th>비고</th>
+    </tr></thead>`;
+    const body = '<tbody>' + ocrMatches.map((m, idx) => `
+        <tr ${m.isNew ? 'class="bg-yellow-50"' : ''}>
+            <td class="text-center"><input type="checkbox" ${m.selected?'checked':''} onchange="ocrMatches[${idx}].selected=this.checked; updateOcrApplyBtn()"></td>
+            <td class="text-[10px]">${m.name.substring(0,30)}</td>
+            <td class="font-bold ${m.isNew?'text-orange-700':'text-blue-700'}">${m.stockName}</td>
+            <td class="text-[10px]">${m.stockSheet}</td>
+            <td class="text-right"><input type="number" value="${m.newQty}" onchange="ocrMatches[${idx}].newQty=Number(this.value)" class="w-20 text-right border border-gray-300 px-1"></td>
+            <td class="text-right"><input type="number" value="${m.newBuy}" onchange="ocrMatches[${idx}].newBuy=Number(this.value)" class="w-28 text-right border border-gray-300 px-1"></td>
+            <td class="text-right"><input type="number" value="${m.newEval}" onchange="ocrMatches[${idx}].newEval=Number(this.value)" class="w-28 text-right border border-gray-300 px-1"></td>
+            <td class="text-[10px]">${m.isNew?'🆕 신규 추가':'기존 update'}</td>
+        </tr>
+    `).join('') + '</tbody>';
+    tbl.innerHTML = head + body;
+    document.getElementById('ocrMatchSection').classList.remove('hidden');
+    document.getElementById('ocrMatchStats').innerHTML =
+        `매칭 ${ocrMatches.filter(m=>!m.isNew).length}건 · 신규 후보 ${ocrMatches.filter(m=>m.isNew).length}건 · 선택된 ${ocrMatches.filter(m=>m.selected).length}건`;
+    updateOcrApplyBtn();
+}
+function updateOcrApplyBtn() {
+    document.getElementById('ocrApplyBtn').disabled = ocrMatches.filter(m=>m.selected).length === 0;
+    document.getElementById('ocrMatchStats').innerHTML =
+        `매칭 ${ocrMatches.filter(m=>!m.isNew).length}건 · 신규 후보 ${ocrMatches.filter(m=>m.isNew).length}건 · 선택된 ${ocrMatches.filter(m=>m.selected).length}건`;
+}
+
+async function applyOcrUpdates() {
+    const owner = document.getElementById('ocr-owner').value;
+    const selected = ocrMatches.filter(m => m.selected);
+    if (selected.length === 0) return;
+    if (!confirm(`${selected.length}건을 시트에 반영합니다. 계속하시겠습니까?`)) return;
+
+    const btn = document.getElementById('ocrApplyBtn');
+    btn.disabled = true; btn.textContent = '⏳ 반영 중...';
+    let ok = 0, err = 0;
+    for (const m of selected) {
+        try {
+            if (m.isNew) {
+                await apiPost({ action:'add', data: {
+                    sheet: m.stockSheet, name: m.name.substring(0,40),
+                    ticker:'', gfSymbol:'', type:'국내주식', currency:'KRW',
+                    qty: m.newQty, buyAmount: m.newBuy, initialEval: m.newEval, owner: owner
+                }});
+            } else {
+                await apiPost({ action:'update', id: m.stockId, updates: {
+                    qty: m.newQty, buyAmount: m.newBuy
+                }});
+            }
+            ok++;
+        } catch(e) { err++; }
+    }
+    btn.disabled = false; btn.textContent = '💾 시트에 일괄 반영';
+    closeOcrModal();
+    toast(`✅ OCR 반영 완료: 성공 ${ok}${err>0?`, 실패 ${err}`:''}`);
+    await fetchData(true);
+}
+
+// ============================================================
+// 엑셀/CSV 가져오기 (SheetJS 사용)
+// ============================================================
+let pendingImportRows = [];
+
+function openImportModal() {
+    pendingImportRows = [];
+    document.getElementById('previewSection').classList.add('hidden');
+    document.getElementById('importConfirmBtn').disabled = true;
+    document.getElementById('fileInput').value = '';
+    document.getElementById('importModal').classList.remove('hidden');
+}
+function closeImportModal() { document.getElementById('importModal').classList.add('hidden'); }
+
+function downloadTemplate() {
+    const headers = ['계좌(시트)', '종목명', 'Ticker', 'GFSymbol', '구분', '통화', '수량', '매입금액(₩)'];
+    const sample = [
+        ['신한_위탁', '예시) 삼성전자', '005930', 'KRX:005930', '국내주식', 'KRW', 100, 8000000],
+        ['미래에셋_위탁', '예시) 애플', 'AAPL', 'AAPL', '해외주식', 'USD', 50, 11000000],
+        ['한국투자_ISA', '예시) 로보티즈', '108490', 'KRX:108490', '국내주식', 'KRW', 10, 2500000],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...sample]);
+    ws['!cols'] = headers.map(() => ({ wch: 18 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '포트폴리오');
+    XLSX.writeFile(wb, '포트폴리오_템플릿.xlsx');
+    toast('📄 템플릿 다운로드 완료 — 채워서 다시 업로드하세요');
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('bg-blue-50');
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+}
+
+function handleFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        try {
+            const wb = XLSX.read(ev.target.result, { type:'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+            parseImportRows(rows);
+        } catch(err) {
+            toast(`❌ 파일 파싱 실패: ${err.message}`, false);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function parseImportRows(rows) {
+    if (rows.length < 2) { toast('❌ 빈 파일이거나 데이터가 없습니다', false); return; }
+    const headers = rows[0].map(h => String(h).trim());
+    // 헤더 매핑: 한국어 / 영문 / 변형 모두 인식
+    const colMap = {};
+    headers.forEach((h, i) => {
+        const k = h.toLowerCase().replace(/[\s()₩$]/g, '');
+        if (/계좌|시트|sheet/.test(k))          colMap.sheet = i;
+        else if (/종목명|name/.test(k))         colMap.name = i;
+        else if (/ticker|티커/.test(k))         colMap.ticker = i;
+        else if (/gfsymbol|symbol|심볼/.test(k))colMap.gfSymbol = i;
+        else if (/구분|type|자산/.test(k))      colMap.type = i;
+        else if (/통화|currency/.test(k))       colMap.currency = i;
+        else if (/수량|qty|qty/.test(k))        colMap.qty = i;
+        else if (/매입|buy|cost|amount/.test(k))colMap.buyAmount = i;
+    });
+    if (colMap.name === undefined || colMap.qty === undefined || colMap.buyAmount === undefined) {
+        toast('❌ 필수 컬럼 누락 (종목명/수량/매입금액)', false);
+        return;
+    }
+    pendingImportRows = [];
+    for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r[colMap.name]) continue;
+        pendingImportRows.push({
+            sheet:     String(r[colMap.sheet]    ?? '기타').trim(),
+            name:      String(r[colMap.name]).trim(),
+            ticker:    colMap.ticker    !== undefined ? String(r[colMap.ticker] ?? '').trim() : '',
+            gfSymbol:  colMap.gfSymbol  !== undefined ? String(r[colMap.gfSymbol] ?? '').trim() : '',
+            type:      colMap.type      !== undefined ? String(r[colMap.type] ?? '국내주식').trim() : '국내주식',
+            currency:  colMap.currency  !== undefined ? String(r[colMap.currency] ?? 'KRW').trim() : 'KRW',
+            qty:       Number(String(r[colMap.qty]).replace(/[,\s]/g,'')) || 0,
+            buyAmount: Number(String(r[colMap.buyAmount]).replace(/[,\s]/g,'')) || 0,
+        });
+    }
+    renderImportPreview();
+}
+
+function renderImportPreview() {
+    const tbl = document.getElementById('previewTable');
+    const cols = ['계좌','종목명','Ticker','GFSymbol','구분','통화','수량','매입금액'];
+    const head = '<thead><tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
+    const body = '<tbody>' + pendingImportRows.slice(0,5).map(r => `<tr>
+        <td>${r.sheet}</td><td>${r.name}</td><td>${r.ticker}</td><td>${r.gfSymbol}</td>
+        <td>${r.type}</td><td>${r.currency}</td>
+        <td class="text-right">${fmtNum(r.qty)}</td><td class="text-right">${fmtNum(r.buyAmount)}</td>
+    </tr>`).join('') + '</tbody>';
+    tbl.innerHTML = head + body;
+    document.getElementById('previewSection').classList.remove('hidden');
+    document.getElementById('importStats').innerHTML =
+        `<b>총 ${pendingImportRows.length}개 종목</b> 등록 예정 — 매입금액 합계 ₩${fmtNum(pendingImportRows.reduce((s,r)=>s+r.buyAmount,0))}`;
+    document.getElementById('importConfirmBtn').disabled = pendingImportRows.length === 0;
+}
+
+async function confirmImport() {
+    if (pendingImportRows.length === 0) return;
+    const btn = document.getElementById('importConfirmBtn');
+    btn.disabled = true; btn.textContent = '⏳ 등록 중...';
+    let ok = 0, err = 0;
+    for (const row of pendingImportRows) {
+        try {
+            await apiPost({ action:'add', data: row });
+            ok++;
+        } catch(e) { err++; }
+    }
+    btn.disabled = false; btn.textContent = '📥 일괄 등록';
+    closeImportModal();
+    toast(`✅ 등록 완료: ${ok}개 성공${err > 0 ? `, ${err}개 실패` : ''}`);
+    await fetchData(true);
+}
+
+// ============================================================
+// 다중 선택 모드 (체크박스 + 일괄 작업)
+// ============================================================
+let bulkMode = false;
+let bulkSelectedIds = new Set();
+
+function toggleBulkMode() {
+    bulkMode = !bulkMode;
+    bulkSelectedIds.clear();
+    document.getElementById('bulkBtn').textContent = bulkMode ? '✕ 다중선택 종료' : '☑️ 다중선택';
+    document.getElementById('bulkBar').classList.toggle('hidden', !bulkMode || bulkSelectedIds.size === 0);
+    applyUpdates();
+}
+function clearBulkSelection() {
+    bulkSelectedIds.clear();
+    document.getElementById('bulkBar').classList.add('hidden');
+    applyUpdates();
+}
+function updateBulkBar() {
+    const c = bulkSelectedIds.size;
+    document.getElementById('bulkCount').textContent = `${c}개 선택`;
+    document.getElementById('bulkBar').classList.toggle('hidden', !bulkMode || c === 0);
+}
+function toggleBulkItem(id, checked) {
+    if (checked) bulkSelectedIds.add(id);
+    else         bulkSelectedIds.delete(id);
+    updateBulkBar();
+}
+async function bulkDelete() {
+    if (bulkSelectedIds.size === 0) return;
+    if (!confirm(`${bulkSelectedIds.size}개 종목을 삭제하시겠습니까? (되돌릴 수 없음)`)) return;
+    const ids = Array.from(bulkSelectedIds);
+    let ok = 0, err = 0;
+    for (const id of ids) {
+        try { await apiPost({ action:'delete', id }); ok++; } catch(e) { err++; }
+    }
+    bulkSelectedIds.clear();
+    toggleBulkMode();
+    toast(`🗑️ 삭제 완료: ${ok}개${err > 0 ? `, 실패 ${err}` : ''}`);
+    await fetchData(true);
+}
+
+// ===== 초기화 =====
+window.addEventListener('DOMContentLoaded', () => {
+    const ownerSel = document.getElementById('ownerFilter');
+    if (ownerSel) ownerSel.value = currentOwner;
+    if (!API_URL) {
+        // 첫 실행 — 설정 안내
+        document.getElementById('lastSyncTime').innerHTML = '<span class="text-yellow-300 font-bold">⚙️ 설정 필요</span>';
+        document.getElementById('status-indicator').innerHTML = '<span class="w-2 h-2 bg-orange-500 rounded-full"></span><span class="font-bold text-orange-700">API URL을 먼저 설정하세요 →</span>';
+        setTimeout(openSettings, 600);
+    } else {
+        fetchData(true);
+    }
+    // 5분마다 자동 갱신
+    setInterval(() => fetchData(false), 5 * 60 * 1000);
+});
+</script>
+</body>
+</html>
