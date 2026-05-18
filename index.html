@@ -36,8 +36,8 @@
         .sheet-tab.active { background-color:#fff; font-weight:bold; color:#107c41; border-top:2px solid #107c41; border-bottom:1px solid #fff; position:relative; top:1px; }
         @keyframes flashGreen { 0%{background-color:#bbf7d0} 100%{background-color:transparent} }
         .flash-update { animation:flashGreen 1.5s ease-out; }
-        #dashboard-view, #grid-view { display:none; height:100%; }
-        #dashboard-view.active, #grid-view.active { display:flex; flex-direction:column; }
+        #dashboard-view, #grid-view, #retirement-view { display:none; height:100%; }
+        #dashboard-view.active, #grid-view.active, #retirement-view.active { display:flex; flex-direction:column; }
         .modal-input { width:100%; border:1px solid #c6c6c6; padding:6px 8px; font-size:13px; outline:none; }
         .modal-input:focus { border-color:#107c41; box-shadow:0 0 0 2px rgba(16,124,65,0.15); }
         .live-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#22c55e; margin-right:4px; animation:pulse 1.8s ease-in-out infinite; }
@@ -226,6 +226,11 @@
                     <tbody id="tableBody"></tbody>
                 </table>
             </div>
+
+            <!-- 은퇴 라이프 대시보드 -->
+            <div id="retirement-view" class="w-full h-full bg-white border border-gray-400 shadow-sm overflow-auto">
+                <iframe src="retirement-life-system/" style="width: 100%; height: 100%; border: none;"></iframe>
+            </div>
         </div>
     </div>
 
@@ -234,6 +239,7 @@
         <div class="sheet-tab active" data-sheet="Dashboard">🏠 통합 대시보드</div>
         <div class="sheet-tab" data-sheet="All">📋 전체종목</div>
         <div class="sheet-tab" data-sheet="Top10">🏆 수익률 TOP10</div>
+        <div class="sheet-tab" data-sheet="RetirementLife">🌳 은퇴 라이프</div>
         <!-- 계좌 시트는 데이터 로드 후 동적 생성 -->
     </div>
 
@@ -629,8 +635,8 @@ async function fetchData(showLoading = false) {
 // ===== 시트 탭 동적 생성 =====
 function buildSheetTabs() {
     const container = document.getElementById('sheetTabs');
-    // 고정 탭 3개 유지하고 나머지는 다시 그림
-    const fixedTabs = container.querySelectorAll('[data-sheet="Dashboard"], [data-sheet="All"], [data-sheet="Top10"]');
+    // 고정 탭 4개 유지하고 나머지는 다시 그림
+    const fixedTabs = container.querySelectorAll('[data-sheet="Dashboard"], [data-sheet="All"], [data-sheet="Top10"], [data-sheet="RetirementLife"]');
     container.innerHTML = '';
     fixedTabs.forEach(t => container.appendChild(t));
 
@@ -654,18 +660,30 @@ function changeSheet(sheetName, element) {
     currentActiveSheet = sheetName;
     document.querySelectorAll('.sheet-tab').forEach(t => t.classList.remove('active'));
     element.classList.add('active');
+    const dashboardView = document.getElementById('dashboard-view');
+    const gridView = document.getElementById('grid-view');
+    const retirementView = document.getElementById('retirement-view');
+
     if (sheetName === 'Dashboard') {
-        document.getElementById('dashboard-view').classList.add('active');
-        document.getElementById('grid-view').classList.remove('active');
+        dashboardView.classList.add('active');
+        gridView.classList.remove('active');
+        retirementView.classList.remove('active');
         document.getElementById('formulaBar').textContent = `=SUM('Portfolio'!평가금액)`;
+        applyUpdates();
+    } else if (sheetName === 'RetirementLife') {
+        dashboardView.classList.remove('active');
+        gridView.classList.remove('active');
+        retirementView.classList.add('active');
+        document.getElementById('formulaBar').textContent = `🌳 은퇴 라이프 밸런스 대시보드`;
     } else {
-        document.getElementById('dashboard-view').classList.remove('active');
-        document.getElementById('grid-view').classList.add('active');
+        dashboardView.classList.remove('active');
+        gridView.classList.add('active');
+        retirementView.classList.remove('active');
         if (sheetName === 'All')        document.getElementById('formulaBar').textContent = `=FILTER('Portfolio', 조건)`;
         else if (sheetName === 'Top10') document.getElementById('formulaBar').textContent = `=LARGE('Portfolio'!수익률, 10)`;
         else                            document.getElementById('formulaBar').textContent = `=FILTER('Portfolio', 시트="${sheetName}")`;
+        applyUpdates();
     }
-    applyUpdates();
 }
 
 function applyUpdates() {
