@@ -78,6 +78,7 @@
                 <option value="유태현" class="text-black">👤 유태현</option>
                 <option value="유해인" class="text-black">👤 유해인</option>
                 <option value="유지원" class="text-black">👤 유지원</option>
+                <option value="월송" class="text-black">🏢 월송그룹</option>
                 <option value="유앤김" class="text-black">👫 유앤김</option>
                 <option value="ALL" class="text-black">👥 전체 (합산)</option>
             </select>
@@ -102,6 +103,7 @@
                 <span id="syncText">⚡ Google Sheets 동기화</span>
             </button>
             <button onclick="openSettings()" class="p-1.5 bg-white/20 hover:bg-white/30 text-white rounded text-xs" title="설정">⚙️</button>
+            <button onclick="doLogout()" id="logoutBtn" class="p-1.5 bg-white/20 hover:bg-white/30 text-white rounded text-xs hidden" title="로그아웃">🚪</button>
             <div class="opacity-90 text-[11px] font-mono border-l border-white/30 pl-3" id="lastSyncTime">미연결</div>
         </div>
     </div>
@@ -268,6 +270,7 @@
                             <option value="유태현">유태현</option>
                             <option value="유해인">유해인</option>
                             <option value="유지원">유지원</option>
+                            <option value="월송">월송그룹</option>
                             <option value="유앤김">유앤김</option>
                         </select>
                     </label>
@@ -304,6 +307,24 @@
         </div>
     </div>
 
+    <!-- 🔐 로그인 모달 (토큰 없을 때 표시) -->
+    <div id="loginModal" class="fixed inset-0 bg-[#107c41] z-[100] flex items-center justify-center hidden">
+        <div class="bg-white shadow-2xl w-[420px] max-w-[92vw] p-6 rounded">
+            <div class="text-center mb-5">
+                <div class="text-4xl mb-2">🔐</div>
+                <h2 class="text-xl font-bold text-[#107c41]">통합 포트폴리오</h2>
+                <p class="text-xs text-gray-500 mt-1">비밀번호를 입력하면 본인 데이터만 보입니다</p>
+            </div>
+            <input id="loginPwInput" type="password" class="modal-input w-full text-center text-lg tracking-widest" placeholder="비밀번호 입력" autocomplete="off">
+            <button onclick="doLogin()" class="w-full mt-3 px-4 py-3 bg-[#107c41] text-white font-bold text-sm rounded hover:bg-[#0a5a2f]">로그인</button>
+            <div id="loginError" class="hidden mt-3 bg-red-50 border border-red-300 text-red-700 text-xs p-2 text-center rounded">❌ 비밀번호가 틀렸습니다</div>
+            <div class="text-[10px] text-gray-400 mt-4 text-center leading-relaxed">
+                비밀번호를 모르시면 운영자(유재진)에게 문의하세요.<br>
+                각자 받은 비밀번호로 본인 종목만 조회·수정 가능합니다.
+            </div>
+        </div>
+    </div>
+
     <!-- 사진 OCR 모달 -->
     <div id="ocrModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden p-4">
         <div class="bg-white border border-gray-400 shadow-2xl w-[860px] max-w-full max-h-[92vh] flex flex-col">
@@ -322,6 +343,7 @@
                             <option value="유태현">유태현</option>
                             <option value="유해인">유해인</option>
                             <option value="유지원">유지원</option>
+                            <option value="월송">월송그룹</option>
                             <option value="유앤김">유앤김</option>
                         </select>
                     </label>
@@ -470,7 +492,13 @@ let currentData   = [];
 let searchTerm    = '';
 let sortConfig    = { key:'evalAmount', dir:'desc' };
 let currentActiveSheet = 'Dashboard';
-let currentOwner  = localStorage.getItem('portfolio_owner') || '유재진';
+// URL 파라미터로 owner 고정 + 토큰 인증 (서버 사이드 권한 검증)
+const URL_PARAMS = new URLSearchParams(window.location.search);
+const URL_OWNER = URL_PARAMS.get('owner');
+const URL_TOKEN = URL_PARAMS.get('token') || localStorage.getItem('portfolio_token') || '';
+const LOCK_OWNER = URL_OWNER && URL_OWNER.length > 0;
+if (URL_PARAMS.get('token')) localStorage.setItem('portfolio_token', URL_PARAMS.get('token'));
+let currentOwner  = URL_OWNER || localStorage.getItem('portfolio_owner') || '유재진';
 let exchangeRates = { USD: 1350, JPY: 8.95 };
 let tChart = null, bChart = null, cChart = null, atChart = null;
 
@@ -527,7 +555,6 @@ async function apiGet() {
 
 async function apiPost(body) {
     if (!API_URL) throw new Error('API_URL 미설정');
-    // Content-Type 미설정 → simple request → CORS preflight 회피
     const r = await fetch(API_URL, {
         method: 'POST',
         body: JSON.stringify(body),
@@ -1381,10 +1408,71 @@ async function bulkDelete() {
     await fetchData(true);
 }
 
+// ============================================================
+// 🔐 비밀번호 로그인 시스템
+// ============================================================
+function showLogin() {
+    document.getElementById('loginModal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('loginPwInput').focus(), 100);
+}
+function hideLogin() { document.getElementById('loginModal').classList.add('hidden'); }
+
+async function doLogin() {
+    const pw = document.getElementById('loginPwInput').value.trim();
+    if (!pw) return;
+    const errBox = document.getElementById('loginError');
+    errBox.classList.add('hidden');
+    // 토큰을 직접 API에 호출해서 검증 (서버가 인증)
+    try {
+        const r = await fetch(API_URL + '?t=' + Date.now() + '&token=' + encodeURIComponent(pw));
+        const data = await r.json();
+        if (data.success === false) throw new Error(data.error);
+        // 검증 성공 — 토큰 저장 후 리로드 (URL에서 token 빼고 localStorage에만)
+        localStorage.setItem('portfolio_token', pw);
+        // 응답에 owner 정보 있으면 자동 lock 모드 (master는 통합)
+        if (data.owner && data.owner !== '__MASTER__') {
+            localStorage.setItem('portfolio_lock_owner', data.owner);
+        } else {
+            localStorage.removeItem('portfolio_lock_owner');
+        }
+        location.reload();
+    } catch(e) {
+        errBox.textContent = '❌ ' + (e.message || '비밀번호 오류');
+        errBox.classList.remove('hidden');
+    }
+}
+
+function doLogout() {
+    if (!confirm('로그아웃하시겠습니까?')) return;
+    localStorage.removeItem('portfolio_token');
+    localStorage.removeItem('portfolio_lock_owner');
+    localStorage.removeItem('portfolio_owner');
+    location.reload();
+}
+
+document.getElementById('loginPwInput').addEventListener('keypress', e => {
+    if (e.key === 'Enter') doLogin();
+});
+
 // ===== 초기화 =====
 window.addEventListener('DOMContentLoaded', () => {
+    // 🔓 통합 포트폴리오 — 로그인 없이 모든 사용자 데이터 접근
+    // (URL ?owner=X 또는 드롭다운으로만 owner 전환)
+    let effectiveLockOwner = LOCK_OWNER ? URL_OWNER : null;
+    if (effectiveLockOwner) currentOwner = effectiveLockOwner;
+
     const ownerSel = document.getElementById('ownerFilter');
     if (ownerSel) ownerSel.value = currentOwner;
+
+    // LOCK_OWNER 모드: URL ?owner=X 또는 비번 검증 결과 owner 잠금
+    if (effectiveLockOwner) {
+        if (ownerSel) ownerSel.style.display = 'none';
+        const titleSpan = document.querySelector('.excel-header-bar span.tracking-wide');
+        if (titleSpan) titleSpan.textContent = `${currentOwner} 포트폴리오 — Google Sheets 실시간 동기화`;
+        document.title = `${currentOwner} 포트폴리오`;
+        localStorage.removeItem('portfolio_owner');
+    }
+
     if (!API_URL) {
         // 첫 실행 — 설정 안내
         document.getElementById('lastSyncTime').innerHTML = '<span class="text-yellow-300 font-bold">⚙️ 설정 필요</span>';
