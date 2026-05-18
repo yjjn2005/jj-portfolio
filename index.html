@@ -269,7 +269,6 @@
                             <option value="유태현">유태현</option>
                             <option value="유해인">유해인</option>
                             <option value="유지원">유지원</option>
-                            <option value="유앤김">유앤김</option>
                         </select>
                     </label>
                     <label class="block"><span class="text-gray-600 text-xs font-bold">계좌</span><input id="edit-sheet" class="modal-input mt-1"></label>
@@ -341,7 +340,6 @@
                             <option value="유태현">유태현</option>
                             <option value="유해인">유해인</option>
                             <option value="유지원">유지원</option>
-                            <option value="유앤김">유앤김</option>
                         </select>
                     </label>
                     <label class="block">
@@ -509,6 +507,10 @@ function changeOwner(owner) {
 
 function getFilteredByOwner() {
     if (currentOwner === 'ALL') return portfolioData;
+    // 유앤김 = 유재진 + 김희연 자동 합산 (부부 통합 뷰)
+    if (currentOwner === '유앤김') {
+        return portfolioData.filter(i => i.owner === '유재진' || i.owner === '김희연');
+    }
     return portfolioData.filter(i => (i.owner || '유재진') === currentOwner);
 }
 
