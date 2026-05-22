@@ -51,6 +51,12 @@
         .manual-eval-cell:hover::after { content:'✏️'; position:absolute; right:4px; top:50%; transform:translateY(-50%); font-size:11px; }
         .manual-eval-input-group { background-color:#eff6ff; border:2px solid #2563eb; padding:8px; border-radius:4px; margin-top:4px; }
         .manual-eval-input-group label { color:#1e40af; font-weight:bold; }
+        /* 🔵 표에서 직접 입력 - 현재가 인라인 편집 */
+        .inline-price-input { width:100%; min-width:80px; text-align:right; font-family:inherit; font-weight:bold; color:#1e40af; background:#fef9c3; border:2px solid #f59e0b; padding:2px 4px; font-size:12px; outline:none; border-radius:2px; }
+        .inline-price-input:focus { background:#fff; border-color:#2563eb; box-shadow:0 0 0 2px rgba(37,99,235,0.2); }
+        .inline-price-input:hover { background:#fffbeb; }
+        @keyframes flashSave { 0%{background-color:#bbf7d0} 100%{background-color:#fef9c3} }
+        .inline-price-saved { animation:flashSave 1.5s ease-out; }
 
         /* ─── 모바일 반응형 ─── */
         @media (max-width: 768px) {
@@ -751,10 +757,28 @@ function renderGridTable() {
             : `<td class="text-center text-gray-500 bg-[#e6e6e6] font-mono text-[11px] border-r-2 border-r-gray-300">${i+1}</td>`;
         const liveTag = isLive
             ? '<span class="ml-1 text-[9px] text-green-600 font-bold bg-green-50 px-1 rounded">LIVE</span>'
-            : (isManual ? '<span class="manual-badge" title="수동 입력 종목 — 클릭하여 평가금액 수정">🔵 수동</span>' : '');
+            : (isManual ? '<span class="manual-badge" title="수동 입력 종목 — 현재가 칸에 직접 입력 가능">🔵 수동</span>' : '');
         const evalCellClass = isManual
             ? 'text-right font-mono font-bold manual-eval-cell'
             : 'text-right font-mono font-bold text-blue-900 bg-blue-50/40';
+
+        // 🔵 청색 종목: 현재가 칸을 인라인 입력으로 표시
+        let priceCellHTML;
+        if (isManual) {
+            const qty = Number(item.qty) || 0;
+            const eval = Number(item.evalAmount) || 0;
+            const pricePerShare = qty > 0 ? Math.round((eval / qty) * 100) / 100 : 0;
+            priceCellHTML = `<td class="text-right" onclick="event.stopPropagation()">
+                <input type="number" step="any" value="${pricePerShare}"
+                    class="inline-price-input" id="price-input-${item.id}"
+                    title="현재가 (1주당) 직접 입력 → Enter / Tab 으로 저장"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+                    onblur="onInlinePriceBlur(${item.id}, this.value, ${pricePerShare})">
+            </td>`;
+        } else {
+            priceCellHTML = `<td class="text-right font-mono font-bold text-orange-800 bg-yellow-50/40">${fmtPrice(item.currentPrice, item.currency)}</td>`;
+        }
+
         tr.innerHTML = `
             ${checkboxCell}
             <td class="font-bold text-gray-800">${item.name} <span class="text-[10px] text-gray-400 ml-1.5 font-normal">${item.ticker||''}</span>${liveTag}</td>
@@ -762,7 +786,7 @@ function renderGridTable() {
             <td class="text-center text-xs text-gray-600">${item.type}</td>
             <td class="text-right font-mono text-gray-800">${fmtNum(item.qty)}</td>
             <td class="text-center text-[10px] text-gray-500 font-mono font-bold">${item.currency}</td>
-            <td class="text-right font-mono font-bold text-orange-800 bg-yellow-50/40">${fmtPrice(item.currentPrice, item.currency)}</td>
+            ${priceCellHTML}
             <td class="text-right font-mono text-gray-600">${fmtNum(item.buyAmount)}</td>
             <td class="${evalCellClass}">${fmtNum(item.evalAmount)}</td>
             <td class="text-right font-mono font-bold ${clr(item.profit)}">${fmtNum(item.profit)}</td>
@@ -770,6 +794,68 @@ function renderGridTable() {
         `;
         tbody.appendChild(tr);
     });
+}
+
+// 🔵 표에서 현재가 직접 입력 → 저장 + 동일 종목 자동 동기화
+async function onInlinePriceBlur(itemId, newPriceStr, originalPrice) {
+    const newPrice = Number(newPriceStr);
+    if (isNaN(newPrice) || newPrice <= 0) {
+        toast('❌ 유효한 가격을 입력하세요', false);
+        return;
+    }
+    // 변화 없으면 무시
+    if (Math.abs(newPrice - originalPrice) < 0.01) return;
+
+    const item = portfolioData.find(s => s.id === itemId);
+    if (!item) return;
+    const qty = Number(item.qty) || 0;
+    if (qty <= 0) {
+        toast('❌ 수량이 0입니다', false);
+        return;
+    }
+    const newEval = Math.round(newPrice * qty);
+
+    // 본인 입력값 저장 + 동일 종목 동기화
+    const inputEl = document.getElementById('price-input-' + itemId);
+    if (inputEl) inputEl.disabled = true;
+
+    try {
+        // 1. 본인 업데이트
+        await apiPost({ action:'update', id: itemId, updates: { initialEval: newEval } });
+
+        // 2. 동일 종목 자동 동기화
+        const siblings = findManualSiblings(item);
+        let syncedCount = 0;
+        for (const sib of siblings) {
+            const sibEval = Math.round(newPrice * Number(sib.qty));
+            try {
+                await apiPost({ action:'update', id: sib.id, updates: { initialEval: sibEval } });
+                syncedCount++;
+            } catch (e) {
+                console.warn('Sibling sync fail:', sib.id, e);
+            }
+        }
+
+        // 시각적 피드백
+        if (inputEl) {
+            inputEl.classList.add('inline-price-saved');
+            setTimeout(() => inputEl.classList.remove('inline-price-saved'), 1500);
+        }
+
+        if (syncedCount > 0) {
+            toast(`✅ ₩${fmtNum(newPrice)}/주 저장 + 동일 종목 ${syncedCount}개 동기화`);
+        } else {
+            toast(`✅ ₩${fmtNum(newPrice)}/주 저장 — 평가 ₩${fmtNum(newEval)}`);
+        }
+
+        // 데이터 새로고침 (다른 셀들도 업데이트)
+        await fetchData(false);
+    } catch (err) {
+        toast(`❌ 저장 실패: ${err.message}`, false);
+        if (inputEl) inputEl.value = originalPrice;
+    } finally {
+        if (inputEl) inputEl.disabled = false;
+    }
 }
 
 function renderDashboardSummary() {
