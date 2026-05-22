@@ -42,6 +42,15 @@
         .modal-input:focus { border-color:#107c41; box-shadow:0 0 0 2px rgba(16,124,65,0.15); }
         .live-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#22c55e; margin-right:4px; animation:pulse 1.8s ease-in-out infinite; }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        /* 🔵 야후/구글 파이낸스 미연동 - 수동 입력 종목 표시 */
+        .manual-row { background-color:#eff6ff !important; }
+        .manual-row td { color:#1e40af !important; }
+        .manual-badge { display:inline-block; background:#2563eb; color:white; font-size:9px; font-weight:bold; padding:1px 5px; border-radius:3px; margin-left:6px; cursor:pointer; }
+        .manual-badge:hover { background:#1d4ed8; }
+        .manual-eval-cell { background-color:#dbeafe !important; cursor:pointer; position:relative; }
+        .manual-eval-cell:hover::after { content:'✏️'; position:absolute; right:4px; top:50%; transform:translateY(-50%); font-size:11px; }
+        .manual-eval-input-group { background-color:#eff6ff; border:2px solid #2563eb; padding:8px; border-radius:4px; margin-top:4px; }
+        .manual-eval-input-group label { color:#1e40af; font-weight:bold; }
 
         /* ─── 모바일 반응형 ─── */
         @media (max-width: 768px) {
@@ -292,6 +301,16 @@
                 </div>
                 <div class="bg-gray-50 border border-gray-200 p-2 text-[11px] text-gray-600">
                     💡 GF 심볼 예시 · 한국주식: <code class="bg-white px-1">KRX:005930</code> · 미국주식: <code class="bg-white px-1">AAPL</code> · 일본주식: <code class="bg-white px-1">TYO:9984</code> · 환율: <code class="bg-white px-1">CURRENCY:USDKRW</code>
+                </div>
+                <div id="manualEvalGroup" class="manual-eval-input-group hidden">
+                    <label class="block">
+                        <span class="text-xs">🔵 수동 평가금액 (₩) — GF 심볼 없는 종목 (펀드/채권)</span>
+                        <input id="edit-initialEval" type="number" class="modal-input mt-1 text-right" placeholder="예: 12,000,000">
+                    </label>
+                    <p class="text-[10px] text-blue-700 mt-1">
+                        ℹ️ GF 심볼이 비어있을 때만 이 값이 평가금액으로 사용됩니다.
+                        한 번 입력하면 <b>대시보드/탭별/총주식</b> 모두 자동 반영됩니다.
+                    </p>
                 </div>
             </div>
             <div class="bg-gray-100 p-3 flex justify-between border-t border-gray-300">
@@ -708,6 +727,8 @@ function renderGridTable() {
     currentData.forEach((item,i) => {
         const tr = document.createElement('tr');
         const isLive = item.currentPrice > 0 && item.gfSymbol;
+        const isManual = !item.gfSymbol || item.currentPrice === 0;  // 🔵 수동 입력 대상
+        if (isManual) tr.classList.add('manual-row');
         if (bulkMode) {
             tr.onclick = (e) => {
                 if (e.target.type === 'checkbox') return;
@@ -720,16 +741,22 @@ function renderGridTable() {
         const checkboxCell = bulkMode
             ? `<td class="text-center bg-[#e6e6e6] border-r-2 border-r-gray-300"><input type="checkbox" ${bulkSelectedIds.has(item.id)?'checked':''} onchange="toggleBulkItem(${item.id}, this.checked)" onclick="event.stopPropagation()"></td>`
             : `<td class="text-center text-gray-500 bg-[#e6e6e6] font-mono text-[11px] border-r-2 border-r-gray-300">${i+1}</td>`;
+        const liveTag = isLive
+            ? '<span class="ml-1 text-[9px] text-green-600 font-bold bg-green-50 px-1 rounded">LIVE</span>'
+            : (isManual ? '<span class="manual-badge" title="수동 입력 종목 — 클릭하여 평가금액 수정">🔵 수동</span>' : '');
+        const evalCellClass = isManual
+            ? 'text-right font-mono font-bold manual-eval-cell'
+            : 'text-right font-mono font-bold text-blue-900 bg-blue-50/40';
         tr.innerHTML = `
             ${checkboxCell}
-            <td class="font-bold text-gray-800">${item.name} <span class="text-[10px] text-gray-400 ml-1.5 font-normal">${item.ticker||''}</span>${isLive?'<span class="ml-1 text-[9px] text-green-600 font-bold bg-green-50 px-1 rounded">LIVE</span>':''}</td>
+            <td class="font-bold text-gray-800">${item.name} <span class="text-[10px] text-gray-400 ml-1.5 font-normal">${item.ticker||''}</span>${liveTag}</td>
             <td class="text-blue-700 text-xs font-bold">${item.sheet}</td>
             <td class="text-center text-xs text-gray-600">${item.type}</td>
             <td class="text-right font-mono text-gray-800">${fmtNum(item.qty)}</td>
             <td class="text-center text-[10px] text-gray-500 font-mono font-bold">${item.currency}</td>
             <td class="text-right font-mono font-bold text-orange-800 bg-yellow-50/40">${fmtPrice(item.currentPrice, item.currency)}</td>
             <td class="text-right font-mono text-gray-600">${fmtNum(item.buyAmount)}</td>
-            <td class="text-right font-mono font-bold text-blue-900 bg-blue-50/40">${fmtNum(item.evalAmount)}</td>
+            <td class="${evalCellClass}">${fmtNum(item.evalAmount)}</td>
             <td class="text-right font-mono font-bold ${clr(item.profit)}">${fmtNum(item.profit)}</td>
             <td class="text-right font-mono font-bold text-sm tracking-tight ${clr(item.returnRate)}">${fmtPct(item.returnRate)}</td>
         `;
@@ -931,6 +958,16 @@ function openEdit(item) {
     document.getElementById('edit-currency').value   = item.currency || 'KRW';
     document.getElementById('edit-qty').value        = item.qty || 0;
     document.getElementById('edit-buyAmount').value  = item.buyAmount || 0;
+    // 🔵 수동 평가금액 — GF심볼 없는 종목만 표시
+    const isManual = !item.gfSymbol || item.currentPrice === 0;
+    const manualGroup = document.getElementById('manualEvalGroup');
+    if (isManual) {
+        manualGroup.classList.remove('hidden');
+        document.getElementById('edit-initialEval').value = item.evalAmount || 0;
+    } else {
+        manualGroup.classList.add('hidden');
+        document.getElementById('edit-initialEval').value = '';
+    }
     document.getElementById('deleteBtn').style.display = 'block';
     document.getElementById('editModal').classList.remove('hidden');
 }
@@ -966,10 +1003,15 @@ async function saveItem() {
         qty:       Number(document.getElementById('edit-qty').value) || 0,
         buyAmount: Number(document.getElementById('edit-buyAmount').value) || 0,
     };
+    // 🔵 수동 평가금액 — GF심볼 없을 때만 의미있음
+    const manualEvalEl = document.getElementById('edit-initialEval');
+    if (manualEvalEl && manualEvalEl.value !== '' && !manualEvalEl.parentElement.parentElement.classList.contains('hidden')) {
+        payload.initialEval = Number(manualEvalEl.value) || 0;
+    }
     try {
         if (id) {
             await apiPost({ action:'update', id: Number(id), updates: payload });
-            toast('✅ 수정 완료 — 모든 기기에 반영됨');
+            toast('✅ 수정 완료 — 모든 기기/시트에 반영됨');
         } else {
             await apiPost({ action:'add', data: payload });
             toast('✅ 추가 완료');
