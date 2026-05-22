@@ -670,6 +670,8 @@ function changeSheet(sheetName, element) {
     currentActiveSheet = sheetName;
     document.querySelectorAll('.sheet-tab').forEach(t => t.classList.remove('active'));
     element.classList.add('active');
+    // 시트 전환 시 항상 평가금액 내림차순으로 초기화
+    if (sheetName !== 'Top10') sortConfig = { key:'evalAmount', dir:'desc' };
     if (sheetName === 'Dashboard') {
         document.getElementById('dashboard-view').classList.add('active');
         document.getElementById('grid-view').classList.remove('active');
