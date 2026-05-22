@@ -218,6 +218,65 @@
                         <tbody id="analysisTableBody"></tbody>
                     </table>
                 </div>
+
+                <!-- ── 수동종목 가격 추이 미니차트 ── -->
+                <div id="sparkChartSection" class="border border-gray-200 shadow-sm mt-3">
+                    <div class="bg-gray-50 px-3 py-1.5 text-xs font-bold border-b border-gray-200 flex justify-between items-center">
+                        <span class="text-gray-600">📈 수동종목 가격 추이 <span class="font-normal text-gray-400">(Naver/Yahoo Finance · 3개월)</span></span>
+                        <button onclick="renderSparkCharts()" class="text-[10px] text-blue-600 font-bold hover:text-blue-800 px-2 py-0.5 border border-blue-200 rounded">🔄 새로고침</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2 p-2">
+
+                        <!-- 소프트뱅크 -->
+                        <div class="spark-card border border-gray-200 rounded p-2 bg-white">
+                            <div class="flex justify-between items-start mb-0.5">
+                                <span class="text-[11px] font-bold text-gray-700">소프트뱅크그룹</span>
+                                <span class="text-[9px] text-gray-400 bg-gray-100 px-1 rounded">TYO:9984</span>
+                            </div>
+                            <div class="flex items-baseline gap-1.5 mb-1">
+                                <span class="spark-price text-sm font-bold font-mono text-gray-800">—</span>
+                                <span class="spark-chg text-[11px] font-bold">—</span>
+                            </div>
+                            <div class="relative" style="height:90px">
+                                <canvas id="spark_9984T"></canvas>
+                                <div class="spark-loading absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">로딩 중…</div>
+                            </div>
+                        </div>
+
+                        <!-- TIGER 코리아배당다우존스 -->
+                        <div class="spark-card border border-gray-200 rounded p-2 bg-white">
+                            <div class="flex justify-between items-start mb-0.5">
+                                <span class="text-[11px] font-bold text-gray-700">TIGER 코리아배당다우존스</span>
+                                <span class="text-[9px] text-gray-400 bg-gray-100 px-1 rounded">KRX:0052D0</span>
+                            </div>
+                            <div class="flex items-baseline gap-1.5 mb-1">
+                                <span class="spark-price text-sm font-bold font-mono text-gray-800">—</span>
+                                <span class="spark-chg text-[11px] font-bold">—</span>
+                            </div>
+                            <div class="relative" style="height:90px">
+                                <canvas id="spark_0052D0"></canvas>
+                                <div class="spark-loading absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">로딩 중…</div>
+                            </div>
+                        </div>
+
+                        <!-- KODEX 삼성전자SK하이닉스채권혼합50 -->
+                        <div class="spark-card border border-gray-200 rounded p-2 bg-white">
+                            <div class="flex justify-between items-start mb-0.5">
+                                <span class="text-[10px] font-bold text-gray-700">KODEX 삼성전자SK하이닉스채권혼합50</span>
+                                <span class="text-[9px] text-gray-400 bg-gray-100 px-1 rounded">KRX:0177N0</span>
+                            </div>
+                            <div class="flex items-baseline gap-1.5 mb-1">
+                                <span class="spark-price text-sm font-bold font-mono text-gray-800">—</span>
+                                <span class="spark-chg text-[11px] font-bold">—</span>
+                            </div>
+                            <div class="relative" style="height:90px">
+                                <canvas id="spark_0177N0"></canvas>
+                                <div class="spark-loading absolute inset-0 flex items-center justify-center text-[10px] text-gray-400">로딩 중…</div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
             </div>
 
             <!-- 그리드 -->
@@ -726,7 +785,14 @@ function applyUpdates() {
     }
     currentData = filtered;
     updateSortIcons();
-    if (currentActiveSheet === 'Dashboard') { renderDashboardSummary(); renderCharts(); }
+    if (currentActiveSheet === 'Dashboard') {
+        renderDashboardSummary();
+        renderCharts();
+        // 수동종목 스파크차트 (처음 1회만 자동 로드)
+        if (!_sparkInst._loaded) { _sparkInst._loaded = true; renderSparkCharts(); }
+        // GOOGLEFINANCE 미지원 종목 라이브 가격 보완 (처음 1회)
+        if (!_livePriceFetched) fetchAllLivePrices();
+    }
     else renderGridTable();
     updateStatusBar();
 }
@@ -1118,12 +1184,169 @@ function openEdit(item) {
     document.getElementById('editModal').classList.remove('hidden');
 }
 
+// ── 수동종목 라이브 가격 자동 연동 (Naver Finance / Yahoo Finance) ──────────
+// allorigins.win = 무료 CORS 프록시 (별도 API 키 불필요)
+const CORS_P = 'https://api.allorigins.win/get?url=';
+
+const LIVE_FETCH_MAP = [
+    { name:'소프트뱅크그룹',                               yahoo:'9984.T',  currency:'JPY', rate:'JPYKRW=X', color:'#E84C88', canvasId:'spark_9984T'   },
+    { name:'TIGER 코리아배당다우존스',                      naver:'0052D0',  currency:'KRW',                  color:'#4472C4', canvasId:'spark_0052D0'  },
+    { name:'KODEX 삼성전자SK하이닉스채권혼합50',            naver:'0177N0',  currency:'KRW',                  color:'#70AD47', canvasId:'spark_0177N0'  },
+];
+
+async function _proxiedJSON(url) {
+    const r = await fetch(CORS_P + encodeURIComponent(url), { signal: AbortSignal.timeout(8000) });
+    const outer = await r.json();
+    return JSON.parse(outer.contents);
+}
+
+// Naver Finance 현재가
+async function fetchNaverPrice(code) {
+    try {
+        const d = await _proxiedJSON(`https://m.stock.naver.com/api/stock/${code}/basic`);
+        return parseFloat((d.closePrice || '0').replace(/,/g,''));
+    } catch { return 0; }
+}
+
+// Yahoo Finance 현재가 (미국주식 / 환율)
+async function fetchYahooPrice(symbol) {
+    try {
+        const d = await _proxiedJSON(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`);
+        return d.chart.result[0].meta.regularMarketPrice || 0;
+    } catch { return 0; }
+}
+
+// Naver Finance 가격 히스토리 → [{label, y}] 60영업일
+async function fetchNaverHistory(code) {
+    try {
+        const d = await _proxiedJSON(`https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=day&count=65&requestType=0`);
+        const points = [];
+        const re = /data="(\d{8})\|\d+\|\d+\|\d+\|(\d+)\|\d+"/g;
+        let m;
+        while ((m = re.exec(d)) !== null) {
+            const s = m[1];
+            points.push({ label:`${s.slice(4,6)}/${s.slice(6,8)}`, y:parseInt(m[2]) });
+        }
+        return points;
+    } catch { return []; }
+}
+
+// Yahoo Finance 가격 히스토리 (일본주식 등)
+async function fetchYahooHistory(symbol) {
+    try {
+        const d = await _proxiedJSON(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=3mo&interval=1d`);
+        const r = d.chart.result[0];
+        const closes = r.indicators.quote[0].close;
+        return r.timestamp.map((ts, i) => {
+            const dt = new Date(ts * 1000);
+            return { label: `${dt.getMonth()+1}/${dt.getDate()}`, y: closes[i] };
+        }).filter(p => p.y != null);
+    } catch { return []; }
+}
+
+const _sparkInst = {};
+let _livePriceFetched = false;
+
+// 스파크차트 렌더 (계좌별 현황 아래)
+async function renderSparkCharts() {
+    for (const cfg of LIVE_FETCH_MAP) {
+        const canvas = document.getElementById(cfg.canvasId);
+        if (!canvas) continue;
+        const card = canvas.closest('.spark-card');
+        const loadEl = card.querySelector('.spark-loading');
+        if (loadEl) loadEl.textContent = '로딩 중…';
+
+        try {
+            const pts = cfg.naver ? await fetchNaverHistory(cfg.naver)
+                                  : await fetchYahooHistory(cfg.yahoo);
+            if (!pts.length) { if (loadEl) loadEl.textContent = '데이터 없음'; continue; }
+
+            const last  = pts[pts.length - 1].y;
+            const first = pts[0].y;
+            const chgPct = ((last - first) / first * 100).toFixed(1);
+            const chgColor = parseFloat(chgPct) >= 0 ? '#d10000' : '#0054ff';
+            const suffix = cfg.currency === 'JPY' ? '¥' : '₩';
+
+            card.querySelector('.spark-price').textContent = fmtNum(last) + suffix;
+            const chgEl = card.querySelector('.spark-chg');
+            chgEl.textContent = (parseFloat(chgPct) >= 0 ? '+' : '') + chgPct + '%';
+            chgEl.style.color = chgColor;
+            if (loadEl) loadEl.remove();
+
+            if (_sparkInst[cfg.canvasId]) _sparkInst[cfg.canvasId].destroy();
+            _sparkInst[cfg.canvasId] = new Chart(canvas, {
+                type:'line',
+                data:{
+                    labels: pts.map(p => p.label),
+                    datasets:[{
+                        data: pts.map(p => p.y),
+                        borderColor: cfg.color, borderWidth:1.5,
+                        pointRadius:0, fill:true,
+                        backgroundColor: cfg.color + '22', tension:0.3
+                    }]
+                },
+                options:{
+                    responsive:true, maintainAspectRatio:false,
+                    animation:false,
+                    plugins:{ legend:{display:false}, tooltip:{
+                        callbacks:{ label: ctx => fmtNum(ctx.raw) + suffix }
+                    }},
+                    scales:{
+                        x:{ ticks:{ maxTicksLimit:4, font:{size:9}, maxRotation:0 }, grid:{display:false} },
+                        y:{ ticks:{ maxTicksLimit:4, font:{size:9},
+                                    callback: v => v >= 1000 ? (v/1000).toFixed(0)+'K' : v },
+                            grid:{ color:'#f5f5f5' } }
+                    }
+                }
+            });
+        } catch(e) {
+            if (loadEl) loadEl.textContent = '로드 실패';
+            console.warn('SparkChart error:', cfg.name, e);
+        }
+    }
+}
+
+// 라이브 가격을 portfolioData에 반영 (GOOGLEFINANCE 미지원 종목 보완)
+async function fetchAllLivePrices() {
+    if (_livePriceFetched) return;
+    const rateCache = {};
+
+    for (const cfg of LIVE_FETCH_MAP) {
+        try {
+            let price = 0;
+            if (cfg.naver) {
+                price = await fetchNaverPrice(cfg.naver);
+            } else if (cfg.yahoo) {
+                price = await fetchYahooPrice(cfg.yahoo);
+                if (cfg.rate) {
+                    if (!rateCache[cfg.rate]) rateCache[cfg.rate] = await fetchYahooPrice(cfg.rate);
+                }
+            }
+            if (price <= 0) continue;
+
+            const rate = cfg.rate ? (rateCache[cfg.rate] || 0) : 1;
+            portfolioData.forEach(item => {
+                if (stripSuffix(item.name || '') !== cfg.name) return;
+                if ((item.qty || 0) <= 0) return;
+                item.currentPrice = price;
+                item.evalAmount = Math.round(
+                    cfg.currency === 'JPY' ? item.qty * price * rate : item.qty * price
+                );
+            });
+        } catch(e) {
+            console.warn('LivePrice error:', cfg.name, e);
+        }
+    }
+    _livePriceFetched = true;
+    applyUpdates();
+}
+
 // 🔵 수동 입력 대상 종목 이름 (이 이름들만 청색 표시 + 수동 입력 UI)
 const MANUAL_NAMES = [
     '1Q미국우주항공',
     'TIGER 코리아배당다우존스',
     'KODEX 삼성전자SK하이닉스채권혼합50',
-    '소프트뱅크그룹'  // GOOGLEFINANCE 일본 시세 지연 (~24h), 수동 갱신
+    '소프트뱅크그룹'  // 라이브 자동연동 시도 후 실패 시 수동 입력
 ];
 
 function stripSuffix(name) {
