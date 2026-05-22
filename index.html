@@ -769,10 +769,12 @@ function renderGridTable() {
             const eval = Number(item.evalAmount) || 0;
             const pricePerShare = qty > 0 ? Math.round((eval / qty) * 100) / 100 : 0;
             priceCellHTML = `<td class="text-right" onclick="event.stopPropagation()">
-                <input type="number" step="any" value="${pricePerShare}"
+                <input type="number" step="any" value="${pricePerShare}" placeholder="${pricePerShare}"
                     class="inline-price-input" id="price-input-${item.id}"
-                    title="현재가 (1주당) 직접 입력 → Enter / Tab 으로 저장"
-                    onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+                    data-original="${pricePerShare}"
+                    title="클릭 시 기존 값 삭제 → 새 가격 입력 → Enter/Tab 저장"
+                    onfocus="onInlinePriceFocus(this)"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();} else if(event.key==='Escape'){this.value=this.dataset.original;this.blur();}"
                     onblur="onInlinePriceBlur(${item.id}, this.value, ${pricePerShare})">
             </td>`;
         } else {
@@ -796,15 +798,32 @@ function renderGridTable() {
     });
 }
 
+// 🔵 현재가 칸 포커스(클릭) 시 기존 값 자동 삭제
+function onInlinePriceFocus(inputEl) {
+    // 기존값을 placeholder 로 백업하고 입력칸 비움 → 바로 새 값 입력 가능
+    inputEl.value = '';
+    // 모바일/PC 모두 동작: setTimeout 없이도 빈 상태에서 키 입력 가능
+}
+
 // 🔵 표에서 현재가 직접 입력 → 저장 + 동일 종목 자동 동기화
 async function onInlinePriceBlur(itemId, newPriceStr, originalPrice) {
+    const inputEl = document.getElementById('price-input-' + itemId);
+    // 빈 값으로 blur 한 경우 → 원래값 복원 (변경 없음)
+    if (newPriceStr === '' || newPriceStr === null || newPriceStr === undefined) {
+        if (inputEl) inputEl.value = originalPrice;
+        return;
+    }
     const newPrice = Number(newPriceStr);
     if (isNaN(newPrice) || newPrice <= 0) {
         toast('❌ 유효한 가격을 입력하세요', false);
+        if (inputEl) inputEl.value = originalPrice;
         return;
     }
     // 변화 없으면 무시
-    if (Math.abs(newPrice - originalPrice) < 0.01) return;
+    if (Math.abs(newPrice - originalPrice) < 0.01) {
+        if (inputEl) inputEl.value = originalPrice;
+        return;
+    }
 
     const item = portfolioData.find(s => s.id === itemId);
     if (!item) return;
@@ -816,7 +835,6 @@ async function onInlinePriceBlur(itemId, newPriceStr, originalPrice) {
     const newEval = Math.round(newPrice * qty);
 
     // 본인 입력값 저장 + 동일 종목 동기화
-    const inputEl = document.getElementById('price-input-' + itemId);
     if (inputEl) inputEl.disabled = true;
 
     try {
