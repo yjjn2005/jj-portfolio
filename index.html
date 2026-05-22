@@ -304,12 +304,13 @@
                 </div>
                 <div id="manualEvalGroup" class="manual-eval-input-group hidden">
                     <label class="block">
-                        <span class="text-xs">🔵 수동 평가금액 (₩) — GF 심볼 없는 종목 (펀드/채권)</span>
+                        <span class="text-xs">🔵 수동 평가금액 (₩) — 지정 종목 (펀드/특수 ETF)</span>
                         <input id="edit-initialEval" type="number" class="modal-input mt-1 text-right" placeholder="예: 12,000,000">
                     </label>
+                    <p id="manualSyncNotice" class="text-[10px] text-blue-700 mt-1 hidden"></p>
                     <p class="text-[10px] text-blue-700 mt-1">
-                        ℹ️ GF 심볼이 비어있을 때만 이 값이 평가금액으로 사용됩니다.
-                        한 번 입력하면 <b>대시보드/탭별/총주식</b> 모두 자동 반영됩니다.
+                        ℹ️ 1주당 가격으로 환산되어 동일 종목 모두에 비례 적용됩니다.
+                        대시보드/시트별/총주식 자동 반영.
                     </p>
                 </div>
             </div>
@@ -727,7 +728,7 @@ function renderGridTable() {
     currentData.forEach((item,i) => {
         const tr = document.createElement('tr');
         const isLive = item.currentPrice > 0 && item.gfSymbol;
-        const isManual = !item.gfSymbol || item.currentPrice === 0;  // 🔵 수동 입력 대상
+        const isManual = isManualStock(item);  // 🔵 수동 입력 대상 (지정된 종목만)
         if (isManual) tr.classList.add('manual-row');
         if (bulkMode) {
             tr.onclick = (e) => {
@@ -958,18 +959,61 @@ function openEdit(item) {
     document.getElementById('edit-currency').value   = item.currency || 'KRW';
     document.getElementById('edit-qty').value        = item.qty || 0;
     document.getElementById('edit-buyAmount').value  = item.buyAmount || 0;
-    // 🔵 수동 평가금액 — GF심볼 없는 종목만 표시
-    const isManual = !item.gfSymbol || item.currentPrice === 0;
+    // 🔵 수동 평가금액 — 지정된 수동 종목만 표시
+    const isManual = isManualStock(item);
     const manualGroup = document.getElementById('manualEvalGroup');
     if (isManual) {
         manualGroup.classList.remove('hidden');
         document.getElementById('edit-initialEval').value = item.evalAmount || 0;
+        // 동일 종목 자동 동기화 안내
+        const siblings = findManualSiblings(item);
+        const noticeEl = document.getElementById('manualSyncNotice');
+        if (siblings.length > 0 && noticeEl) {
+            noticeEl.classList.remove('hidden');
+            noticeEl.innerHTML = `🔗 동일 종목 ${siblings.length}개 자동 동기화: ` +
+                siblings.map(s => `<span class="bg-blue-100 px-1 mx-0.5">${s.sheet}(${s.qty}주)</span>`).join('');
+        } else if (noticeEl) {
+            noticeEl.classList.add('hidden');
+        }
     } else {
         manualGroup.classList.add('hidden');
         document.getElementById('edit-initialEval').value = '';
     }
     document.getElementById('deleteBtn').style.display = 'block';
     document.getElementById('editModal').classList.remove('hidden');
+}
+
+// 🔵 수동 입력 대상 종목 이름 (이 이름들만 청색 표시 + 수동 입력 UI)
+const MANUAL_NAMES = [
+    '1Q미국우주항공',
+    'TIGER 코리아배당다우존스',
+    'KODEX 삼성전자SK하이닉스채권혼합50'
+];
+
+function stripSuffix(name) {
+    return (name || '').replace(/\([^)]*\)\s*$/, '').trim();
+}
+
+function isManualStock(item) {
+    if (!item) return false;
+    // 채권은 청색 표시 제외
+    if (item.type === '채권') return false;
+    // 라이브 가격이 있으면 수동 아님
+    if (item.gfSymbol && Number(item.currentPrice) > 0) return false;
+    // 지정된 수동 종목 이름과 매칭
+    const clean = stripSuffix(item.name || '');
+    return MANUAL_NAMES.includes(clean);
+}
+
+function findManualSiblings(item) {
+    if (!item || !portfolioData) return [];
+    const clean = stripSuffix(item.name || '');
+    return portfolioData.filter(s =>
+        s.id !== item.id &&
+        Number(s.qty) > 0 &&
+        stripSuffix(s.name || '') === clean &&
+        isManualStock(s)
+    );
 }
 
 function addNewItem() {
@@ -1003,15 +1047,44 @@ async function saveItem() {
         qty:       Number(document.getElementById('edit-qty').value) || 0,
         buyAmount: Number(document.getElementById('edit-buyAmount').value) || 0,
     };
-    // 🔵 수동 평가금액 — GF심볼 없을 때만 의미있음
+    // 🔵 수동 평가금액 — 청색 그룹이 보일 때만
     const manualEvalEl = document.getElementById('edit-initialEval');
-    if (manualEvalEl && manualEvalEl.value !== '' && !manualEvalEl.parentElement.parentElement.classList.contains('hidden')) {
+    const manualGroupEl = document.getElementById('manualEvalGroup');
+    let manualEvalChanged = false;
+    if (manualEvalEl && manualEvalEl.value !== '' && manualGroupEl && !manualGroupEl.classList.contains('hidden')) {
         payload.initialEval = Number(manualEvalEl.value) || 0;
+        manualEvalChanged = true;
     }
     try {
         if (id) {
             await apiPost({ action:'update', id: Number(id), updates: payload });
-            toast('✅ 수정 완료 — 모든 기기/시트에 반영됨');
+            // 🔗 동일 종목 자동 동기화 (1주당 가격 비례 적용)
+            if (manualEvalChanged && payload.qty > 0) {
+                const currentItem = portfolioData.find(s => s.id === Number(id));
+                if (currentItem) {
+                    const pricePerShare = payload.initialEval / payload.qty;
+                    const siblings = findManualSiblings(currentItem);
+                    let syncedCount = 0;
+                    for (const sib of siblings) {
+                        const sibEval = Math.round(pricePerShare * Number(sib.qty));
+                        try {
+                            await apiPost({ action:'update', id: sib.id, updates: { initialEval: sibEval } });
+                            syncedCount++;
+                        } catch (e) {
+                            console.warn('Sibling sync fail:', sib.id, e);
+                        }
+                    }
+                    if (syncedCount > 0) {
+                        toast(`✅ 수정 완료 + 동일 종목 ${syncedCount}개 자동 동기화`);
+                    } else {
+                        toast('✅ 수정 완료 — 모든 기기/시트에 반영됨');
+                    }
+                } else {
+                    toast('✅ 수정 완료 — 모든 기기/시트에 반영됨');
+                }
+            } else {
+                toast('✅ 수정 완료 — 모든 기기/시트에 반영됨');
+            }
         } else {
             await apiPost({ action:'add', data: payload });
             toast('✅ 추가 완료');
