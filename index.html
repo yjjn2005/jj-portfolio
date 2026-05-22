@@ -178,24 +178,6 @@
                         <div id="dash-rate" class="text-2xl font-bold font-mono">-</div>
                     </div>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 h-64 mb-6">
-                    <div class="border border-gray-300 p-3 flex flex-col shadow-sm">
-                        <div class="text-xs font-bold text-center bg-gray-100 p-1.5 mb-2 border border-gray-200">① 자산군별 비중</div>
-                        <div class="relative flex-1"><canvas id="typeChart"></canvas></div>
-                    </div>
-                    <div class="border border-gray-300 p-3 flex flex-col shadow-sm">
-                        <div class="text-xs font-bold text-center bg-gray-100 p-1.5 mb-2 border border-gray-200">② 증권사별 분배</div>
-                        <div class="relative flex-1"><canvas id="brokerChart"></canvas></div>
-                    </div>
-                    <div class="border border-gray-300 p-3 flex flex-col shadow-sm">
-                        <div class="text-xs font-bold text-center bg-gray-100 p-1.5 mb-2 border border-gray-200">③ 통화별 노출도</div>
-                        <div class="relative flex-1"><canvas id="currencyChart"></canvas></div>
-                    </div>
-                    <div class="border border-gray-300 p-3 flex flex-col shadow-sm">
-                        <div class="text-xs font-bold text-center bg-gray-100 p-1.5 mb-2 border border-gray-200">④ 계좌성격별 (위탁/연금/ISA)</div>
-                        <div class="relative flex-1"><canvas id="accountTypeChart"></canvas></div>
-                    </div>
-                </div>
 
                 <!-- 주체별 손익 분석 테이블 -->
                 <div class="border border-gray-300 shadow-sm">
@@ -587,7 +569,7 @@ const LOCK_OWNER = URL_OWNER && URL_OWNER.length > 0;
 if (URL_PARAMS.get('token')) localStorage.setItem('portfolio_token', URL_PARAMS.get('token'));
 let currentOwner  = URL_OWNER || localStorage.getItem('portfolio_owner') || '유재진';
 let exchangeRates = { USD: 1350, JPY: 8.95 };
-let tChart = null, bChart = null, cChart = null, atChart = null;
+// (차트 변수 제거됨 — 대시보드 차트 삭제)
 
 function changeOwner(owner) {
     currentOwner = owner;
@@ -980,65 +962,6 @@ function renderDashboardSummary() {
 }
 
 function renderCharts() {
-    const typeMap = {}, brokerMap = {}, currencyMap = {}, accountTypeMap = {};
-    getFilteredByOwner().forEach(item => {
-        const tKey = item.type && item.type.includes('ETF') ? 'ETF' : (item.type || '기타');
-        typeMap[tKey] = (typeMap[tKey]||0) + getEffectiveEval(item);
-        const bKey = (item.sheet||'').split('_')[0] || '기타';
-        brokerMap[bKey] = (brokerMap[bKey]||0) + getEffectiveEval(item);
-        const cKey = item.currency || 'KRW';
-        currencyMap[cKey] = (currencyMap[cKey]||0) + getEffectiveEval(item);
-        const aKey = classifyAccountType(item.sheet);
-        accountTypeMap[aKey] = (accountTypeMap[aKey]||0) + getEffectiveEval(item);
-    });
-
-    const COLORS = ['#4472C4','#ED7D31','#A5A5A5','#FFC000','#5B9BD5','#70AD47','#264478','#9E480E','#636363','#997300'];
-    Chart.defaults.font.family = '"Malgun Gothic", sans-serif';
-
-    const baseOpts = {
-        responsive:true, maintainAspectRatio:false,
-        plugins:{
-            legend:{ position:'right', labels:{ boxWidth:10, font:{ size:10 }, padding:6 } },
-            tooltip:{
-                callbacks:{
-                    label: ctx => {
-                        const sum = ctx.dataset.data.reduce((a,b)=>a+b,0);
-                        const pct = sum ? (ctx.parsed/sum*100).toFixed(1) : 0;
-                        return `${ctx.label}: ₩${fmtNum(ctx.parsed)} (${pct}%)`;
-                    }
-                }
-            }
-        }
-    };
-
-    if (tChart) tChart.destroy();
-    tChart = new Chart(document.getElementById('typeChart'), {
-        type:'doughnut',
-        data:{ labels:Object.keys(typeMap), datasets:[{ data:Object.values(typeMap), backgroundColor:COLORS, borderWidth:1 }] },
-        options: baseOpts
-    });
-
-    if (bChart) bChart.destroy();
-    bChart = new Chart(document.getElementById('brokerChart'), {
-        type:'pie',
-        data:{ labels:Object.keys(brokerMap), datasets:[{ data:Object.values(brokerMap), backgroundColor:COLORS.slice().reverse(), borderWidth:1 }] },
-        options: baseOpts
-    });
-
-    if (cChart) cChart.destroy();
-    cChart = new Chart(document.getElementById('currencyChart'), {
-        type:'doughnut',
-        data:{ labels:Object.keys(currencyMap), datasets:[{ data:Object.values(currencyMap), backgroundColor:['#4472C4','#ED7D31','#70AD47'], borderWidth:1 }] },
-        options: baseOpts
-    });
-
-    if (atChart) atChart.destroy();
-    atChart = new Chart(document.getElementById('accountTypeChart'), {
-        type:'pie',
-        data:{ labels:Object.keys(accountTypeMap), datasets:[{ data:Object.values(accountTypeMap), backgroundColor:['#264478','#5B9BD5','#FFC000','#70AD47','#9E480E','#A5A5A5','#636363'], borderWidth:1 }] },
-        options: baseOpts
-    });
-
     renderAnalysisTable();
 }
 
