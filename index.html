@@ -766,7 +766,7 @@ function renderGridTable() {
         let priceCellHTML;
         if (isManual) {
             const qty = Number(item.qty) || 0;
-            const eval = Number(item.evalAmount) || 0;
+            const eval = getEffectiveEval(item);
             const pricePerShare = qty > 0 ? Math.round((eval / qty) * 100) / 100 : 0;
             // 동일 종목 sibling 개수 미리 계산 → 툴팁/배지에 표시
             const siblings = findManualSiblings(item);
@@ -797,9 +797,9 @@ function renderGridTable() {
             <td class="text-center text-[10px] text-gray-500 font-mono font-bold">${item.currency}</td>
             ${priceCellHTML}
             <td class="text-right font-mono text-gray-600">${fmtNum(item.buyAmount)}</td>
-            <td class="${evalCellClass}">${fmtNum(item.evalAmount)}</td>
-            <td class="text-right font-mono font-bold ${clr(item.profit)}">${fmtNum(item.profit)}</td>
-            <td class="text-right font-mono font-bold text-sm tracking-tight ${clr(item.returnRate)}">${fmtPct(item.returnRate)}</td>
+            <td class="${evalCellClass}">${fmtNum(getEffectiveEval(item))}</td>
+            <td class="text-right font-mono font-bold ${clr(getEffectiveProfit(item))}">${fmtNum(getEffectiveProfit(item))}</td>
+            <td class="text-right font-mono font-bold text-sm tracking-tight ${clr(getEffectiveRate(item))}">${fmtPct(getEffectiveRate(item))}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -896,8 +896,8 @@ async function onInlinePriceBlur(itemId, newPriceStr, originalPrice) {
 
 function renderDashboardSummary() {
     const data = getFilteredByOwner();
-    const tBuy   = data.reduce((s,i) => s + (i.buyAmount||0), 0);
-    const tEval  = data.reduce((s,i) => s + (i.evalAmount||0), 0);
+    const tBuy   = data.reduce((s,i) => s + getEffectiveBuy(i), 0);
+    const tEval  = data.reduce((s,i) => s + getEffectiveEval(i), 0);
     const tProf  = tEval - tBuy;
     const tRate  = tBuy === 0 ? 0 : (tProf/tBuy)*100;
     document.getElementById('dash-buy').textContent   = `₩${fmtNum(tBuy)}`;
@@ -917,13 +917,13 @@ function renderCharts() {
     const typeMap = {}, brokerMap = {}, currencyMap = {}, accountTypeMap = {};
     getFilteredByOwner().forEach(item => {
         const tKey = item.type && item.type.includes('ETF') ? 'ETF' : (item.type || '기타');
-        typeMap[tKey] = (typeMap[tKey]||0) + (item.evalAmount||0);
+        typeMap[tKey] = (typeMap[tKey]||0) + getEffectiveEval(item);
         const bKey = (item.sheet||'').split('_')[0] || '기타';
-        brokerMap[bKey] = (brokerMap[bKey]||0) + (item.evalAmount||0);
+        brokerMap[bKey] = (brokerMap[bKey]||0) + getEffectiveEval(item);
         const cKey = item.currency || 'KRW';
-        currencyMap[cKey] = (currencyMap[cKey]||0) + (item.evalAmount||0);
+        currencyMap[cKey] = (currencyMap[cKey]||0) + getEffectiveEval(item);
         const aKey = classifyAccountType(item.sheet);
-        accountTypeMap[aKey] = (accountTypeMap[aKey]||0) + (item.evalAmount||0);
+        accountTypeMap[aKey] = (accountTypeMap[aKey]||0) + getEffectiveEval(item);
     });
 
     const COLORS = ['#4472C4','#ED7D31','#A5A5A5','#FFC000','#5B9BD5','#70AD47','#264478','#9E480E','#636363','#997300'];
@@ -985,10 +985,10 @@ function renderAnalysisTable() {
         const k = item.sheet || '기타';
         if (!grouped[k]) grouped[k] = { count:0, buy:0, eval:0 };
         grouped[k].count += 1;
-        grouped[k].buy   += item.buyAmount || 0;
-        grouped[k].eval  += item.evalAmount || 0;
+        grouped[k].buy   += getEffectiveBuy(item);
+        grouped[k].eval  += getEffectiveEval(item);
     });
-    const totalEval = data.reduce((s,i) => s + (i.evalAmount||0), 0) || 1;
+    const totalEval = data.reduce((s,i) => s + getEffectiveEval(i), 0) || 1;
     const rows = Object.entries(grouped)
         .map(([sheet, v]) => ({
             sheet, count:v.count, buy:v.buy, evalAmt:v.eval,
@@ -1065,7 +1065,7 @@ function resetAll() {
 }
 function updateStatusBar() {
     const cnt = currentActiveSheet === 'Dashboard' ? portfolioData.length : currentData.length;
-    const sum = (currentActiveSheet === 'Dashboard' ? portfolioData : currentData).reduce((a,i) => a + (i.evalAmount||0), 0);
+    const sum = (currentActiveSheet === 'Dashboard' ? portfolioData : currentData).reduce((a,i) => a + getEffectiveEval(i), 0);
     document.getElementById('status-count').innerHTML = `<b>${cnt}개</b> 종목 표출 (총 ${portfolioData.length}개)`;
     document.getElementById('status-sum').textContent = `현재 시트 합계: ₩${fmtNum(sum)}`;
 }
@@ -1139,6 +1139,29 @@ function isManualStock(item) {
     // 지정된 수동 종목 이름과 매칭
     const clean = stripSuffix(item.name || '');
     return MANUAL_NAMES.includes(clean);
+}
+
+// ── 채권·청산포지션 유효값 헬퍼 ─────────────────────────────────
+// 채권: 투자원금을 평가금액으로 표시 (현재가 없음 → 만기상환 가정)
+// qty=0: 청산 완료 → 평가금액 0, 손익 0 (가짜 손실 표시 방지)
+function getEffectiveEval(item) {
+    if (!item) return 0;
+    if ((item.qty || 0) === 0) return 0;                     // 청산
+    if (item.type === '채권') return item.buyAmount || 0;    // 채권=투자원금
+    return item.evalAmount || 0;
+}
+function getEffectiveBuy(item) {
+    if (!item || (item.qty || 0) === 0) return 0;            // 청산 포지션 제외
+    return item.buyAmount || 0;
+}
+function getEffectiveProfit(item) {
+    if (!item || (item.qty || 0) === 0 || item.type === '채권') return 0;
+    return (item.evalAmount || 0) - (item.buyAmount || 0);
+}
+function getEffectiveRate(item) {
+    if (!item || (item.qty || 0) === 0 || item.type === '채권') return 0;
+    const buy = item.buyAmount || 0;
+    return buy === 0 ? 0 : ((item.evalAmount || 0) - buy) / buy * 100;
 }
 
 // 동일 이름 종목이 다른 시트에 있는지 확인 (수동/라이브 모두)
