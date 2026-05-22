@@ -768,14 +768,21 @@ function renderGridTable() {
             const qty = Number(item.qty) || 0;
             const eval = Number(item.evalAmount) || 0;
             const pricePerShare = qty > 0 ? Math.round((eval / qty) * 100) / 100 : 0;
-            priceCellHTML = `<td class="text-right" onclick="event.stopPropagation()">
+            // 동일 종목 sibling 개수 미리 계산 → 툴팁/배지에 표시
+            const siblings = findManualSiblings(item);
+            const sibCount = siblings.length;
+            const sibTitle = sibCount > 0
+                ? `🔗 동일종목 ${sibCount}개 자동 동기화: ` + siblings.map(s => `${s.sheet}(${s.qty}주)`).join(', ')
+                : '동일 종목 없음 — 본인만 적용';
+            const syncBadge = sibCount > 0 ? `<span class="text-[8px] text-blue-700 font-bold ml-1">🔗${sibCount}</span>` : '';
+            priceCellHTML = `<td class="text-right whitespace-nowrap" onclick="event.stopPropagation()">
                 <input type="number" step="any" value="${pricePerShare}" placeholder="${pricePerShare}"
                     class="inline-price-input" id="price-input-${item.id}"
                     data-original="${pricePerShare}"
-                    title="클릭 시 기존 값 삭제 → 새 가격 입력 → Enter/Tab 저장"
+                    title="${sibTitle}\n클릭 시 기존 값 삭제 → 새 가격 입력 → Enter/Tab 저장"
                     onfocus="onInlinePriceFocus(this)"
                     onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();} else if(event.key==='Escape'){this.value=this.dataset.original;this.blur();}"
-                    onblur="onInlinePriceBlur(${item.id}, this.value, ${pricePerShare})">
+                    onblur="onInlinePriceBlur(${item.id}, this.value, ${pricePerShare})">${syncBadge}
             </td>`;
         } else {
             priceCellHTML = `<td class="text-right font-mono font-bold text-orange-800 bg-yellow-50/40">${fmtPrice(item.currentPrice, item.currency)}</td>`;
@@ -841,16 +848,22 @@ async function onInlinePriceBlur(itemId, newPriceStr, originalPrice) {
         // 1. 본인 업데이트
         await apiPost({ action:'update', id: itemId, updates: { initialEval: newEval } });
 
-        // 2. 동일 종목 자동 동기화
+        // 2. 동일 종목 자동 동기화 (모든 시트에서 같은 이름 검색)
         const siblings = findManualSiblings(item);
+        const syncDetails = [];
         let syncedCount = 0;
         for (const sib of siblings) {
-            const sibEval = Math.round(newPrice * Number(sib.qty));
+            const sibQty = Number(sib.qty) || 0;
+            const sibEval = Math.round(newPrice * sibQty);
             try {
                 await apiPost({ action:'update', id: sib.id, updates: { initialEval: sibEval } });
                 syncedCount++;
+                syncDetails.push(`${sib.sheet}(${fmtNum(sibQty)}주→₩${fmtNum(sibEval)})`);
+                // API 호출 간 짧은 간격 (Apps Script rate limit 회피)
+                await new Promise(r => setTimeout(r, 150));
             } catch (e) {
                 console.warn('Sibling sync fail:', sib.id, e);
+                syncDetails.push(`${sib.sheet}(❌실패)`);
             }
         }
 
@@ -860,13 +873,18 @@ async function onInlinePriceBlur(itemId, newPriceStr, originalPrice) {
             setTimeout(() => inputEl.classList.remove('inline-price-saved'), 1500);
         }
 
+        // 상세 결과 메시지
         if (syncedCount > 0) {
-            toast(`✅ ₩${fmtNum(newPrice)}/주 저장 + 동일 종목 ${syncedCount}개 동기화`);
+            const detail = syncDetails.join(', ');
+            toast(`✅ ₩${fmtNum(newPrice)}/주 적용 — 동일종목 ${syncedCount}개 시트 자동 동기화: ${detail}`);
+        } else if (siblings.length === 0) {
+            toast(`✅ ₩${fmtNum(newPrice)}/주 저장 — 평가 ₩${fmtNum(newEval)} (동일 종목 없음)`);
         } else {
             toast(`✅ ₩${fmtNum(newPrice)}/주 저장 — 평가 ₩${fmtNum(newEval)}`);
         }
 
-        // 데이터 새로고침 (다른 셀들도 업데이트)
+        // 데이터 새로고침 (Sheet 수식 재계산 시간 확보)
+        await new Promise(r => setTimeout(r, 500));
         await fetchData(false);
     } catch (err) {
         toast(`❌ 저장 실패: ${err.message}`, false);
@@ -1122,14 +1140,28 @@ function isManualStock(item) {
     return MANUAL_NAMES.includes(clean);
 }
 
+// 동일 이름 종목이 다른 시트에 있는지 확인 (수동/라이브 모두)
+function hasSameNameInOtherSheets(item) {
+    if (!item || !portfolioData) return false;
+    const clean = stripSuffix(item.name || '');
+    if (!clean) return false;
+    return portfolioData.some(s =>
+        s.id !== item.id &&
+        Number(s.qty) > 0 &&
+        stripSuffix(s.name || '') === clean
+    );
+}
+
 function findManualSiblings(item) {
     if (!item || !portfolioData) return [];
     const clean = stripSuffix(item.name || '');
+    if (!clean) return [];
+    // 동일 이름의 모든 다른 시트 종목 (수량>0) — 수동/라이브 무관하게 모두 sync
+    // 라이브 종목도 J열(initialEval) 업데이트는 안전 (K>0이면 L 수식이 K 사용)
     return portfolioData.filter(s =>
         s.id !== item.id &&
         Number(s.qty) > 0 &&
-        stripSuffix(s.name || '') === clean &&
-        isManualStock(s)
+        stripSuffix(s.name || '') === clean
     );
 }
 
