@@ -57,6 +57,14 @@
         .inline-price-input:hover { background:#fffbeb; }
         @keyframes flashSave { 0%{background-color:#bbf7d0} 100%{background-color:#fef9c3} }
         .inline-price-saved { animation:flashSave 1.5s ease-out; }
+        /* 계좌별 손익 분석 전용 테이블 */
+        .analysis-table { border-collapse:collapse; width:100%; background:#fff; }
+        .analysis-table th { background:#edf7f1; color:#1a5c36; font-weight:700; text-align:right; padding:11px 18px; font-size:13px; white-space:nowrap; border-bottom:2px solid #107c41; border-right:1px solid #cce5d4; }
+        .analysis-table th:first-child { text-align:left; }
+        .analysis-table td { padding:13px 18px; font-size:15px; line-height:1.3; border-bottom:1px solid #e8f0e9; border-right:1px solid #eff4f0; white-space:nowrap; }
+        .analysis-table th:last-child, .analysis-table td:last-child { border-right:none; }
+        .analysis-table tbody tr { cursor:pointer; }
+        .analysis-table tbody tr:hover td { background:#e0f2e8 !important; }
 
         /* ─── 모바일 반응형 ─── */
         @media (max-width: 768px) {
@@ -179,22 +187,22 @@
                     </div>
                 </div>
 
-                <!-- 주체별 손익 분석 테이블 -->
-                <div class="border border-gray-300 shadow-sm">
-                    <div class="bg-gray-100 px-3 py-2 text-sm font-bold border-b border-gray-200 flex justify-between items-center">
-                        <span>📑 계좌별 손익 분석</span>
-                        <span class="text-[11px] text-gray-500 font-normal">행 클릭 시 해당 시트로 이동</span>
+                <!-- 계좌별 손익 분석 테이블 -->
+                <div style="border:1px solid #cce5d4;border-radius:7px;overflow:hidden;box-shadow:0 2px 8px rgba(16,124,65,0.08)">
+                    <div style="background:#107c41;padding:12px 18px;display:flex;justify-content:space-between;align-items:center">
+                        <span style="color:#fff;font-weight:700;font-size:15px;letter-spacing:0.02em">📑 계좌별 손익 분석</span>
+                        <span style="color:#a7d9bb;font-size:13px">행 클릭 → 해당 시트로 이동</span>
                     </div>
-                    <table class="excel-table">
+                    <table class="analysis-table">
                         <thead>
                             <tr>
-                                <th class="text-xs">계좌</th>
-                                <th class="text-xs">종목수</th>
-                                <th class="text-xs">매입금액(₩)</th>
-                                <th class="text-xs">평가금액(₩)</th>
-                                <th class="text-xs">평가손익(₩)</th>
-                                <th class="text-xs">수익률</th>
-                                <th class="text-xs">전체비중</th>
+                                <th style="text-align:left">계좌</th>
+                                <th>종목수</th>
+                                <th>매입금액(₩)</th>
+                                <th>평가금액(₩)</th>
+                                <th>평가손익(₩)</th>
+                                <th>수익률</th>
+                                <th>비중</th>
                             </tr>
                         </thead>
                         <tbody id="analysisTableBody"></tbody>
@@ -929,6 +937,14 @@ function renderAnalysisTable() {
         }))
         .sort((a,b) => b.evalAmt - a.evalAmt);
 
+    const bar = (w, color='#107c41') => `
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px">
+            <div style="width:60px;height:8px;background:#e0e8e2;border-radius:4px;overflow:hidden">
+                <div style="width:${Math.min(w,100).toFixed(1)}%;height:100%;background:${color};border-radius:4px"></div>
+            </div>
+            <span style="font-family:monospace;font-size:14px;color:#333;display:inline-block;min-width:42px;text-align:right">${w.toFixed(1)}%</span>
+        </div>`;
+
     tbody.innerHTML = '';
     rows.forEach(r => {
         const tr = document.createElement('tr');
@@ -937,13 +953,13 @@ function renderAnalysisTable() {
             if (tab) tab.click();
         };
         tr.innerHTML = `
-            <td class="font-bold text-blue-700">${r.sheet}</td>
-            <td class="text-right font-mono">${r.count}</td>
-            <td class="text-right font-mono text-gray-600">${fmtNum(r.buy)}</td>
-            <td class="text-right font-mono font-bold text-blue-900">${fmtNum(r.evalAmt)}</td>
-            <td class="text-right font-mono font-bold ${clr(r.profit)}">${fmtNum(r.profit)}</td>
-            <td class="text-right font-mono font-bold ${clr(r.rate)}">${fmtPct(r.rate)}</td>
-            <td class="text-right font-mono text-gray-700">${r.weight.toFixed(1)}%</td>
+            <td style="font-weight:700;color:#1a56a4;font-size:15px">${r.sheet}</td>
+            <td style="text-align:center;color:#555;font-size:14px">${r.count}개</td>
+            <td style="text-align:right;font-family:monospace;color:#777;font-size:14px">${fmtNum(r.buy)}</td>
+            <td style="text-align:right;font-family:monospace;font-weight:700;color:#1a56a4;font-size:16px;background:#f0f5ff">${fmtNum(r.evalAmt)}</td>
+            <td style="text-align:right;font-family:monospace;font-weight:700;font-size:15px" class="${clr(r.profit)}">${fmtNum(r.profit)}</td>
+            <td style="text-align:right;font-family:monospace;font-weight:700;font-size:16px;background:${r.rate>=0?'rgba(209,0,0,0.04)':'rgba(0,84,255,0.04)'}" class="${clr(r.rate)}">${fmtPct(r.rate)}</td>
+            <td>${bar(r.weight)}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -957,15 +973,15 @@ function renderAnalysisTable() {
     const sumProfit = sum.eval - sum.buy;
     const sumRate   = sum.buy ? (sumProfit/sum.buy)*100 : 0;
     const tr = document.createElement('tr');
-    tr.style.cssText = 'background:#f3f2f1;font-weight:bold;border-top:2px solid #107c41';
+    tr.style.cssText = 'background:#edf7f1;border-top:2px solid #107c41';
     tr.innerHTML = `
-        <td class="text-[#107c41] font-bold">합계</td>
-        <td class="text-right font-mono">${sum.count}</td>
-        <td class="text-right font-mono">${fmtNum(sum.buy)}</td>
-        <td class="text-right font-mono text-blue-900">${fmtNum(sum.eval)}</td>
-        <td class="text-right font-mono ${clr(sumProfit)}">${fmtNum(sumProfit)}</td>
-        <td class="text-right font-mono ${clr(sumRate)}">${fmtPct(sumRate)}</td>
-        <td class="text-right font-mono">100.0%</td>
+        <td style="color:#107c41;font-weight:700;font-size:15px">🔢 합계</td>
+        <td style="text-align:center;font-weight:700;font-size:14px;color:#333">${sum.count}개</td>
+        <td style="text-align:right;font-family:monospace;font-weight:700;font-size:14px">${fmtNum(sum.buy)}</td>
+        <td style="text-align:right;font-family:monospace;font-weight:700;color:#1a56a4;font-size:16px;background:#e8f0ff">${fmtNum(sum.eval)}</td>
+        <td style="text-align:right;font-family:monospace;font-weight:700;font-size:15px" class="${clr(sumProfit)}">${fmtNum(sumProfit)}</td>
+        <td style="text-align:right;font-family:monospace;font-weight:700;font-size:16px" class="${clr(sumRate)}">${fmtPct(sumRate)}</td>
+        <td>${bar(100, '#107c41')}</td>
     `;
     tbody.appendChild(tr);
 }
