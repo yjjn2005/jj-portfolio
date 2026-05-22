@@ -303,14 +303,21 @@
                     💡 GF 심볼 예시 · 한국주식: <code class="bg-white px-1">KRX:005930</code> · 미국주식: <code class="bg-white px-1">AAPL</code> · 일본주식: <code class="bg-white px-1">TYO:9984</code> · 환율: <code class="bg-white px-1">CURRENCY:USDKRW</code>
                 </div>
                 <div id="manualEvalGroup" class="manual-eval-input-group hidden">
-                    <label class="block">
-                        <span class="text-xs">🔵 수동 평가금액 (₩) — 지정 종목 (펀드/특수 ETF)</span>
-                        <input id="edit-initialEval" type="number" class="modal-input mt-1 text-right" placeholder="예: 12,000,000">
-                    </label>
-                    <p id="manualSyncNotice" class="text-[10px] text-blue-700 mt-1 hidden"></p>
+                    <div class="text-xs font-bold text-blue-900 mb-2">🔵 수동 입력 — 둘 중 하나만 입력하면 자동 환산</div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="block">
+                            <span class="text-xs text-blue-900">① 현재가 (1주당 ₩)</span>
+                            <input id="edit-manualPrice" type="number" step="any" class="modal-input mt-1 text-right" placeholder="예: 16,140" oninput="onManualPriceInput()">
+                        </label>
+                        <label class="block">
+                            <span class="text-xs text-blue-900">② 총 평가금액 (₩)</span>
+                            <input id="edit-initialEval" type="number" class="modal-input mt-1 text-right" placeholder="예: 22,000,000" oninput="onManualEvalInput()">
+                        </label>
+                    </div>
+                    <div id="manualCalcPreview" class="text-[11px] text-blue-700 mt-2 bg-white border border-blue-200 p-2 rounded hidden"></div>
+                    <p id="manualSyncNotice" class="text-[10px] text-blue-700 mt-2 hidden"></p>
                     <p class="text-[10px] text-blue-700 mt-1">
-                        ℹ️ 1주당 가격으로 환산되어 동일 종목 모두에 비례 적용됩니다.
-                        대시보드/시트별/총주식 자동 반영.
+                        ℹ️ 현재가(1주당) 입력하면 같은 이름의 다른 시트 종목까지 1주당 가격이 자동 동기화됩니다.
                     </p>
                 </div>
             </div>
@@ -964,20 +971,26 @@ function openEdit(item) {
     const manualGroup = document.getElementById('manualEvalGroup');
     if (isManual) {
         manualGroup.classList.remove('hidden');
-        document.getElementById('edit-initialEval').value = item.evalAmount || 0;
+        const qty = Number(item.qty) || 0;
+        const eval = Number(item.evalAmount) || 0;
+        document.getElementById('edit-initialEval').value = eval;
+        document.getElementById('edit-manualPrice').value = qty > 0 ? Math.round((eval / qty) * 100) / 100 : 0;
+        // 미리보기
+        updateManualPreview(item);
         // 동일 종목 자동 동기화 안내
         const siblings = findManualSiblings(item);
         const noticeEl = document.getElementById('manualSyncNotice');
         if (siblings.length > 0 && noticeEl) {
             noticeEl.classList.remove('hidden');
             noticeEl.innerHTML = `🔗 동일 종목 ${siblings.length}개 자동 동기화: ` +
-                siblings.map(s => `<span class="bg-blue-100 px-1 mx-0.5">${s.sheet}(${s.qty}주)</span>`).join('');
+                siblings.map(s => `<span class="bg-blue-100 px-1 mx-0.5">${s.sheet}(${fmtNum(s.qty)}주)</span>`).join('');
         } else if (noticeEl) {
             noticeEl.classList.add('hidden');
         }
     } else {
         manualGroup.classList.add('hidden');
         document.getElementById('edit-initialEval').value = '';
+        document.getElementById('edit-manualPrice').value = '';
     }
     document.getElementById('deleteBtn').style.display = 'block';
     document.getElementById('editModal').classList.remove('hidden');
@@ -1014,6 +1027,48 @@ function findManualSiblings(item) {
         stripSuffix(s.name || '') === clean &&
         isManualStock(s)
     );
+}
+
+// 🔵 현재가 (1주당) 입력 시 → 총 평가금액 자동 계산
+function onManualPriceInput() {
+    const qty = Number(document.getElementById('edit-qty').value) || 0;
+    const price = Number(document.getElementById('edit-manualPrice').value) || 0;
+    if (qty > 0 && price > 0) {
+        const newEval = Math.round(price * qty);
+        document.getElementById('edit-initialEval').value = newEval;
+        updateManualPreviewFromForm();
+    }
+}
+
+// 🔵 총 평가금액 입력 시 → 현재가 (1주당) 자동 계산
+function onManualEvalInput() {
+    const qty = Number(document.getElementById('edit-qty').value) || 0;
+    const evalAmt = Number(document.getElementById('edit-initialEval').value) || 0;
+    if (qty > 0 && evalAmt > 0) {
+        const newPrice = Math.round((evalAmt / qty) * 100) / 100;
+        document.getElementById('edit-manualPrice').value = newPrice;
+        updateManualPreviewFromForm();
+    }
+}
+
+function updateManualPreview(item) {
+    const el = document.getElementById('manualCalcPreview');
+    if (!el) return;
+    const qty = Number(item.qty) || 0;
+    const eval = Number(item.evalAmount) || 0;
+    const price = qty > 0 ? eval / qty : 0;
+    el.classList.remove('hidden');
+    el.innerHTML = `현재 상태 — 보유 <b>${fmtNum(qty)}주</b> × 1주당 <b>₩${fmtNum(price)}</b> = 평가 <b>₩${fmtNum(eval)}</b>`;
+}
+
+function updateManualPreviewFromForm() {
+    const el = document.getElementById('manualCalcPreview');
+    if (!el) return;
+    const qty = Number(document.getElementById('edit-qty').value) || 0;
+    const price = Number(document.getElementById('edit-manualPrice').value) || 0;
+    const evalAmt = Number(document.getElementById('edit-initialEval').value) || 0;
+    el.classList.remove('hidden');
+    el.innerHTML = `미리보기 — 보유 <b>${fmtNum(qty)}주</b> × 1주당 <b>₩${fmtNum(price)}</b> = 평가 <b>₩${fmtNum(evalAmt)}</b>`;
 }
 
 function addNewItem() {
