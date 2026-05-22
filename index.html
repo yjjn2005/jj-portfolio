@@ -1242,11 +1242,14 @@ async function fetchYahooPrice(symbol) {
 }
 
 // Naver Finance 가격 히스토리 (fchart XML) → [{label, y}]
+// corsproxy.io 사용 (allorigins는 fchart에서 타임아웃 발생)
 async function fetchNaverHistory(code) {
     try {
-        const xml = await _alloriginsText(`https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=day&count=65&requestType=0`);
+        const url = `https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=day&count=65&requestType=0`;
+        const r = await fetch(CORS_CIO + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
+        const txt = await r.text();
         const points = [];
-        for (const m of xml.matchAll(/data="(\d{8})\|\d+\|\d+\|\d+\|(\d+)\|/g)) {
+        for (const m of txt.matchAll(/data="(\d{8})\|\d+\|\d+\|\d+\|(\d+)\|/g)) {
             const s = m[1];
             points.push({ label:`${s.slice(4,6)}/${s.slice(6,8)}`, y:parseInt(m[2]) });
         }
