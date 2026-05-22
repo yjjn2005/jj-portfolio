@@ -1185,45 +1185,68 @@ function openEdit(item) {
 }
 
 // ── 수동종목 라이브 가격 자동 연동 (Naver Finance / Yahoo Finance) ──────────
-// allorigins.win = 무료 CORS 프록시 (별도 API 키 불필요)
-const CORS_P = 'https://api.allorigins.win/get?url=';
+// allorigins.win  = CORS 프록시 (Naver Finance용)
+// corsproxy.io    = CORS 프록시 (Yahoo Finance용 — allorigins 타임아웃 대안)
+const CORS_ALL  = 'https://api.allorigins.win/get?url=';
+const CORS_CIO  = 'https://corsproxy.io/?';
 
 const LIVE_FETCH_MAP = [
-    { name:'소프트뱅크그룹',                               yahoo:'9984.T',  currency:'JPY', rate:'JPYKRW=X', color:'#E84C88', canvasId:'spark_9984T'   },
-    { name:'TIGER 코리아배당다우존스',                      naver:'0052D0',  currency:'KRW',                  color:'#4472C4', canvasId:'spark_0052D0'  },
-    { name:'KODEX 삼성전자SK하이닉스채권혼합50',            naver:'0177N0',  currency:'KRW',                  color:'#70AD47', canvasId:'spark_0177N0'  },
+    { name:'소프트뱅크그룹',                    yahoo:'9984.T',  currency:'JPY', color:'#E84C88', canvasId:'spark_9984T'   },
+    { name:'TIGER 코리아배당다우존스',           naver:'0052D0',  currency:'KRW', color:'#4472C4', canvasId:'spark_0052D0'  },
+    { name:'KODEX 삼성전자SK하이닉스채권혼합50', naver:'0177N0',  currency:'KRW', color:'#70AD47', canvasId:'spark_0177N0'  },
 ];
 
-async function _proxiedJSON(url) {
-    const r = await fetch(CORS_P + encodeURIComponent(url), { signal: AbortSignal.timeout(8000) });
+// allorigins 프록시로 JSON (Naver용)
+async function _alloriginsJSON(url) {
+    const r = await fetch(CORS_ALL + encodeURIComponent(url), { signal: AbortSignal.timeout(9000) });
     const outer = await r.json();
     return JSON.parse(outer.contents);
 }
 
-// Naver Finance 현재가
-async function fetchNaverPrice(code) {
-    try {
-        const d = await _proxiedJSON(`https://m.stock.naver.com/api/stock/${code}/basic`);
-        return parseFloat((d.closePrice || '0').replace(/,/g,''));
-    } catch { return 0; }
+// allorigins 프록시로 RAW 텍스트 (Naver fchart XML용)
+async function _alloriginsText(url) {
+    const r = await fetch(CORS_ALL + encodeURIComponent(url), { signal: AbortSignal.timeout(9000) });
+    const outer = await r.json();
+    return outer.contents || '';
 }
 
-// Yahoo Finance 현재가 (미국주식 / 환율)
+// corsproxy.io 로 Yahoo Finance JSON (일본주식 / 히스토리)
+async function _yahooJSON(symbol, params = 'interval=1d&range=5d') {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?${params}`;
+    const r = await fetch(CORS_CIO + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
+    return r.json();
+}
+
+// Naver Finance 현재가 (기본 API - 0052D0 지원, 0177N0은 fchart로 fallback)
+async function fetchNaverPrice(code) {
+    try {
+        const d = await _alloriginsJSON(`https://m.stock.naver.com/api/stock/${code}/basic`);
+        const p = parseFloat((d.closePrice || '0').replace(/,/g,''));
+        if (p > 0) return p;
+    } catch { /* fallthrough */ }
+    // fallback: fchart XML에서 마지막 종가 추출
+    try {
+        const xml = await _alloriginsText(`https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=day&count=5&requestType=0`);
+        const matches = [...xml.matchAll(/data="(\d{8})\|\d+\|\d+\|\d+\|(\d+)\|/g)];
+        if (matches.length) return parseInt(matches[matches.length - 1][2]);
+    } catch { /* ignore */ }
+    return 0;
+}
+
+// Yahoo Finance 현재가 (일본주식 등) — corsproxy.io 사용
 async function fetchYahooPrice(symbol) {
     try {
-        const d = await _proxiedJSON(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`);
+        const d = await _yahooJSON(symbol, 'interval=1d&range=5d');
         return d.chart.result[0].meta.regularMarketPrice || 0;
     } catch { return 0; }
 }
 
-// Naver Finance 가격 히스토리 → [{label, y}] 60영업일
+// Naver Finance 가격 히스토리 (fchart XML) → [{label, y}]
 async function fetchNaverHistory(code) {
     try {
-        const d = await _proxiedJSON(`https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=day&count=65&requestType=0`);
+        const xml = await _alloriginsText(`https://fchart.stock.naver.com/sise.nhn?symbol=${code}&timeframe=day&count=65&requestType=0`);
         const points = [];
-        const re = /data="(\d{8})\|\d+\|\d+\|\d+\|(\d+)\|\d+"/g;
-        let m;
-        while ((m = re.exec(d)) !== null) {
+        for (const m of xml.matchAll(/data="(\d{8})\|\d+\|\d+\|\d+\|(\d+)\|/g)) {
             const s = m[1];
             points.push({ label:`${s.slice(4,6)}/${s.slice(6,8)}`, y:parseInt(m[2]) });
         }
@@ -1231,10 +1254,10 @@ async function fetchNaverHistory(code) {
     } catch { return []; }
 }
 
-// Yahoo Finance 가격 히스토리 (일본주식 등)
+// Yahoo Finance 가격 히스토리 (일본주식 등) — corsproxy.io 사용
 async function fetchYahooHistory(symbol) {
     try {
-        const d = await _proxiedJSON(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=3mo&interval=1d`);
+        const d = await _yahooJSON(symbol, 'range=3mo&interval=1d');
         const r = d.chart.result[0];
         const closes = r.indicators.quote[0].close;
         return r.timestamp.map((ts, i) => {
@@ -1309,7 +1332,6 @@ async function renderSparkCharts() {
 // 라이브 가격을 portfolioData에 반영 (GOOGLEFINANCE 미지원 종목 보완)
 async function fetchAllLivePrices() {
     if (_livePriceFetched) return;
-    const rateCache = {};
 
     for (const cfg of LIVE_FETCH_MAP) {
         try {
@@ -1318,19 +1340,18 @@ async function fetchAllLivePrices() {
                 price = await fetchNaverPrice(cfg.naver);
             } else if (cfg.yahoo) {
                 price = await fetchYahooPrice(cfg.yahoo);
-                if (cfg.rate) {
-                    if (!rateCache[cfg.rate]) rateCache[cfg.rate] = await fetchYahooPrice(cfg.rate);
-                }
             }
             if (price <= 0) continue;
 
-            const rate = cfg.rate ? (rateCache[cfg.rate] || 0) : 1;
+            // JPY 환율: 앱 내 exchangeRates.JPY 직접 사용 (별도 요청 불필요)
+            const jpyRate = (exchangeRates && exchangeRates.JPY) ? exchangeRates.JPY : 9.5;
+
             portfolioData.forEach(item => {
                 if (stripSuffix(item.name || '') !== cfg.name) return;
                 if ((item.qty || 0) <= 0) return;
                 item.currentPrice = price;
                 item.evalAmount = Math.round(
-                    cfg.currency === 'JPY' ? item.qty * price * rate : item.qty * price
+                    cfg.currency === 'JPY' ? item.qty * price * jpyRate : item.qty * price
                 );
             });
         } catch(e) {
