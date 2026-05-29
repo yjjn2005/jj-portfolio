@@ -534,6 +534,10 @@ let exchangeRates = { USD: 1350, JPY: 8.95 };
 function changeOwner(owner) {
     currentOwner = owner;
     localStorage.setItem('portfolio_owner', owner);
+    // URL에 owner 파라미터 반영 → 공유 시 동일 화면 유지
+    const params = new URLSearchParams(window.location.search);
+    params.set('owner', owner);
+    history.replaceState(null, '', '?' + params.toString());
     currentActiveSheet = 'Dashboard';
     buildSheetTabs();
     applyUpdates();
@@ -790,8 +794,8 @@ function renderGridTable() {
         let priceCellHTML;
         if (isManual) {
             const qty = Number(item.qty) || 0;
-            const eval = getEffectiveEval(item);
-            const pricePerShare = qty > 0 ? Math.round((eval / qty) * 100) / 100 : 0;
+            const evalAmt = getEffectiveEval(item);
+            const pricePerShare = qty > 0 ? Math.round((evalAmt / qty) * 100) / 100 : 0;
             // 동일 종목 sibling 개수 미리 계산 → 툴팁/배지에 표시
             const siblings = findManualSiblings(item);
             const sibCount = siblings.length;
