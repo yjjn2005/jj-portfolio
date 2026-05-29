@@ -211,6 +211,15 @@
 
             </div>
 
+            <!-- 4인 비교 뷰 -->
+            <div id="family-view" class="w-full h-full bg-white border border-gray-400 shadow-sm overflow-y-auto p-5" style="display:none">
+                <div class="flex items-center justify-between mb-5 border-b-2 border-[#107c41] pb-2">
+                    <h2 class="text-xl font-bold text-[#107c41]">👨‍👩‍👧‍👦 가족 4인 포트폴리오 동시 비교</h2>
+                    <div class="text-sm text-gray-500">2026-05-28 기준</div>
+                </div>
+                <div id="family-compare-content"></div>
+            </div>
+
             <!-- 그리드 -->
             <div id="grid-view" class="w-full h-full bg-white border border-gray-400 shadow-sm overflow-auto">
                 <table class="excel-table min-w-max">
@@ -240,6 +249,7 @@
         <div class="sheet-tab active" data-sheet="Dashboard">🏠 통합 대시보드</div>
         <div class="sheet-tab" data-sheet="All">📋 전체종목</div>
         <div class="sheet-tab" data-sheet="Top10">🏆 수익률 TOP10</div>
+        <div class="sheet-tab" data-sheet="FamilyCompare">👨‍👩‍👧‍👦 4인 비교</div>
         <!-- 계좌 시트는 데이터 로드 후 동적 생성 -->
     </div>
 
@@ -680,13 +690,22 @@ function changeSheet(sheetName, element) {
     element.classList.add('active');
     // 시트 전환 시 항상 평가금액 내림차순으로 초기화
     if (sheetName !== 'Top10') sortConfig = { key:'evalAmount', dir:'desc' };
+    const dashEl   = document.getElementById('dashboard-view');
+    const gridEl   = document.getElementById('grid-view');
+    const familyEl = document.getElementById('family-view');
+    dashEl.classList.remove('active'); dashEl.style.display = 'none';
+    gridEl.classList.remove('active'); gridEl.style.display = 'none';
+    familyEl.style.display = 'none';
     if (sheetName === 'Dashboard') {
-        document.getElementById('dashboard-view').classList.add('active');
-        document.getElementById('grid-view').classList.remove('active');
+        dashEl.classList.add('active'); dashEl.style.display = '';
         document.getElementById('formulaBar').textContent = `=SUM('Portfolio'!평가금액)`;
+    } else if (sheetName === 'FamilyCompare') {
+        familyEl.style.display = '';
+        document.getElementById('formulaBar').textContent = `=가족4인_포트폴리오_비교()`;
+        renderFamilyComparison();
+        return;
     } else {
-        document.getElementById('dashboard-view').classList.remove('active');
-        document.getElementById('grid-view').classList.add('active');
+        gridEl.classList.add('active'); gridEl.style.display = '';
         if (sheetName === 'All')        document.getElementById('formulaBar').textContent = `=FILTER('Portfolio', 조건)`;
         else if (sheetName === 'Top10') document.getElementById('formulaBar').textContent = `=LARGE('Portfolio'!수익률, 10)`;
         else                            document.getElementById('formulaBar').textContent = `=FILTER('Portfolio', 시트="${sheetName}")`;
@@ -984,6 +1003,163 @@ function renderAnalysisTable() {
         <td>${bar(100, '#107c41')}</td>
     `;
     tbody.appendChild(tr);
+}
+
+// ===== 4인 가족 비교 뷰 =====
+function renderFamilyComparison() {
+    const members = ['김희연','유태현','유해인','유지원'];
+    const colors  = ['#e74c3c','#2980b9','#27ae60','#8e44ad'];
+    const emojis  = ['👩','👦','👧','👧'];
+
+    const container = document.getElementById('family-compare-content');
+    if (!container) return;
+
+    // 1) 인당 요약 카드
+    const summaries = members.map((m, idx) => {
+        const data = portfolioData.filter(i => (i.owner || '유재진') === m);
+        const buy  = data.reduce((s,i) => s + getEffectiveBuy(i),  0);
+        const eval_= data.reduce((s,i) => s + getEffectiveEval(i), 0);
+        const prof = eval_ - buy;
+        const rate = buy === 0 ? 0 : (prof/buy)*100;
+        const accs = [...new Set(data.map(i => i.sheet))].length;
+        return { name:m, emoji:emojis[idx], color:colors[idx], data, buy, eval:eval_, prof, rate, accs, cnt:data.length };
+    });
+
+    const totalBuy  = summaries.reduce((s,m) => s+m.buy,  0);
+    const totalEval = summaries.reduce((s,m) => s+m.eval, 0);
+    const totalProf = totalEval - totalBuy;
+    const totalRate = totalBuy === 0 ? 0 : (totalProf/totalBuy)*100;
+
+    // 2) 렌더링
+    const clrCss = v => v >= 0 ? '#e53935' : '#1565c0';
+    const fmt    = n => fmtNum(Math.round(n));
+    const fmtM   = n => {
+        const abs = Math.abs(n);
+        if (abs >= 1e8) return (n/1e8).toFixed(1)+'억';
+        if (abs >= 1e4) return (n/1e4).toFixed(0)+'만';
+        return fmt(n);
+    };
+
+    let html = `
+    <!-- 전체 합산 배너 -->
+    <div style="background:linear-gradient(135deg,#107c41,#1a9e55);border-radius:10px;padding:18px 24px;margin-bottom:24px;color:#fff;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div>
+            <div style="font-size:13px;opacity:.8;font-weight:600">👨‍👩‍👧‍👦 4인 통합 총자산</div>
+            <div style="font-size:28px;font-weight:900;font-family:monospace;letter-spacing:-1px">₩${fmt(totalEval)}</div>
+        </div>
+        <div style="display:flex;gap:24px;flex-wrap:wrap">
+            <div style="text-align:center">
+                <div style="font-size:11px;opacity:.7">총 매입</div>
+                <div style="font-size:16px;font-weight:700;font-family:monospace">₩${fmt(totalBuy)}</div>
+            </div>
+            <div style="text-align:center">
+                <div style="font-size:11px;opacity:.7">총 손익</div>
+                <div style="font-size:16px;font-weight:700;font-family:monospace;color:${totalProf>=0?'#ffd54f':'#ef9a9a'}">${totalProf>=0?'+':''}₩${fmt(totalProf)}</div>
+            </div>
+            <div style="text-align:center">
+                <div style="font-size:11px;opacity:.7">통합 수익률</div>
+                <div style="font-size:20px;font-weight:900;font-family:monospace;color:${totalProf>=0?'#ffd54f':'#ef9a9a'}">${totalProf>=0?'+':''}${totalRate.toFixed(2)}%</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4인 카드 그리드 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:28px">`;
+
+    summaries.forEach(m => {
+        const weight = totalEval > 0 ? (m.eval/totalEval*100) : 0;
+        html += `
+        <div style="border:2px solid ${m.color}22;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.07)">
+            <div style="background:${m.color};padding:12px 16px;display:flex;align-items:center;justify-content:space-between">
+                <span style="color:#fff;font-weight:800;font-size:16px">${m.emoji} ${m.name}</span>
+                <span style="color:#fff;opacity:.85;font-size:12px">${m.accs}계좌 · ${m.cnt}종목</span>
+            </div>
+            <div style="padding:14px 16px;background:#fff">
+                <div style="margin-bottom:10px">
+                    <div style="font-size:11px;color:#888;font-weight:600">총 평가자산</div>
+                    <div style="font-size:22px;font-weight:900;font-family:monospace;color:${m.color}">₩${fmt(m.eval)}</div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+                    <div>
+                        <div style="font-size:10px;color:#aaa">매입금액</div>
+                        <div style="font-size:13px;font-family:monospace;color:#555">₩${fmtM(m.buy)}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px;color:#aaa">평가손익</div>
+                        <div style="font-size:13px;font-family:monospace;font-weight:700;color:${clrCss(m.prof)}">${m.prof>=0?'+':''}₩${fmtM(m.prof)}</div>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                    <span style="font-size:11px;color:#888">수익률</span>
+                    <span style="font-size:18px;font-weight:900;font-family:monospace;color:${clrCss(m.rate)}">${m.rate>=0?'+':''}${m.rate.toFixed(2)}%</span>
+                </div>
+                <div style="margin-top:8px">
+                    <div style="display:flex;justify-content:space-between;font-size:10px;color:#aaa;margin-bottom:2px">
+                        <span>전체 비중</span><span>${weight.toFixed(1)}%</span>
+                    </div>
+                    <div style="background:#eee;border-radius:4px;height:6px;overflow:hidden">
+                        <div style="width:${weight.toFixed(1)}%;height:100%;background:${m.color};border-radius:4px"></div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    html += `</div>
+
+    <!-- 계좌별 상세 비교표 -->
+    <div style="border:1px solid #cce5d4;border-radius:7px;overflow:hidden;margin-bottom:20px">
+        <div style="background:#107c41;padding:12px 18px">
+            <span style="color:#fff;font-weight:700;font-size:15px">📊 4인 계좌별 상세 비교</span>
+        </div>
+        <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+                <tr style="background:#edf7f1">
+                    <th style="padding:10px 14px;text-align:left;border-bottom:2px solid #107c41;white-space:nowrap">계좌</th>`;
+
+    members.forEach((m,i) => {
+        html += `<th colspan="2" style="padding:10px 14px;text-align:center;border-bottom:2px solid ${colors[i]};color:${colors[i]};white-space:nowrap">${emojis[i]} ${m}</th>`;
+    });
+
+    html += `</tr>
+                <tr style="background:#f8f8f8;font-size:11px;color:#888">
+                    <th></th>`;
+    members.forEach(() => {
+        html += `<th style="padding:4px 8px;text-align:right">평가(₩)</th><th style="padding:4px 8px;text-align:right">수익률</th>`;
+    });
+    html += `</tr></thead><tbody>`;
+
+    // 전체 계좌 목록 수집
+    const allSheets = [...new Set(summaries.flatMap(m => m.data.map(i => i.sheet)))].sort();
+    allSheets.forEach((sheet, ri) => {
+        html += `<tr style="background:${ri%2===0?'#fff':'#f9f9f9'};border-bottom:1px solid #eee">
+            <td style="padding:8px 14px;font-weight:600;color:#1a56a4;white-space:nowrap">${sheet}</td>`;
+        summaries.forEach(m => {
+            const rows = m.data.filter(i => i.sheet === sheet);
+            if (rows.length === 0) {
+                html += `<td style="text-align:right;color:#ccc;padding:8px">-</td><td style="text-align:right;color:#ccc;padding:8px">-</td>`;
+            } else {
+                const buy  = rows.reduce((s,i) => s+getEffectiveBuy(i),  0);
+                const eval_= rows.reduce((s,i) => s+getEffectiveEval(i), 0);
+                const rate = buy===0 ? 0 : ((eval_-buy)/buy)*100;
+                html += `<td style="text-align:right;font-family:monospace;padding:8px;font-weight:600">₩${fmtM(eval_)}</td>
+                          <td style="text-align:right;font-family:monospace;padding:8px;font-weight:700;color:${clrCss(rate)}">${rate>=0?'+':''}${rate.toFixed(1)}%</td>`;
+            }
+        });
+        html += `</tr>`;
+    });
+
+    // 합계 행
+    html += `<tr style="background:#edf7f1;border-top:2px solid #107c41">
+        <td style="padding:10px 14px;font-weight:800;color:#107c41">🔢 합계</td>`;
+    summaries.forEach(m => {
+        html += `<td style="text-align:right;font-family:monospace;font-weight:800;padding:10px 8px;font-size:14px">₩${fmtM(m.eval)}</td>
+                  <td style="text-align:right;font-family:monospace;font-weight:800;padding:10px 8px;font-size:14px;color:${clrCss(m.rate)}">${m.rate>=0?'+':''}${m.rate.toFixed(2)}%</td>`;
+    });
+    html += `</tr></tbody></table></div></div>`;
+
+    container.innerHTML = html;
 }
 
 // ===== 정렬·검색 =====
