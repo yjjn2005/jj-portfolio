@@ -1352,17 +1352,16 @@ function stripSuffix(name) {
 
 function isManualStock(item) {
     if (!item) return false;
-    // 채권·예금/현금 제외
     if (item.type === '채권' || item.type === '예금/현금') return false;
-    // 수량 0 (청산) 제외
     if (Number(item.qty) <= 0) return false;
-    // 라이브 가격이 정상 동작하면 수동 아님
-    if (item.gfSymbol && Number(item.currentPrice) > 0) return false;
-    // gfSymbol 없으면 → 수동 입력 필요
-    if (!item.gfSymbol) return true;
-    // 지정된 수동 종목 이름
+    // MANUAL_NAMES 지정 종목은 항상 수동 (라이브 가격 여부 무관)
     const clean = stripSuffix(item.name || '');
-    return MANUAL_NAMES.includes(clean);
+    if (MANUAL_NAMES.includes(clean)) return true;
+    // gfSymbol 없으면 수동
+    if (!item.gfSymbol) return true;
+    // 라이브 가격 정상이면 수동 아님
+    if (item.gfSymbol && Number(item.currentPrice) > 0) return false;
+    return false;
 }
 
 // ── 채권·청산포지션 유효값 헬퍼 ─────────────────────────────────
