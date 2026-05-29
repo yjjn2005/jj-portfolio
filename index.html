@@ -812,9 +812,10 @@ function renderGridTable() {
             priceCellHTML = `<td class="text-right font-mono font-bold text-orange-800 bg-yellow-50/40">${fmtPrice(item.currentPrice, item.currency)}</td>`;
         }
 
+        const nameCellClass = isManual ? 'font-bold text-blue-700' : 'font-bold text-gray-800';
         tr.innerHTML = `
             ${checkboxCell}
-            <td class="font-bold text-gray-800">${item.name} <span class="text-[10px] text-gray-400 ml-1.5 font-normal">${item.ticker||''}</span>${liveTag}</td>
+            <td class="${nameCellClass}">${item.name} <span class="text-[10px] text-gray-400 ml-1.5 font-normal">${item.ticker||''}</span>${liveTag}</td>
             <td class="text-blue-700 text-xs font-bold">${item.sheet}</td>
             <td class="text-center text-xs text-gray-600">${item.type}</td>
             <td class="text-right font-mono text-gray-800">${fmtNum(item.qty)}</td>
