@@ -677,6 +677,13 @@ function buildSheetTabs() {
         container.appendChild(div);
     });
 
+    // 5인 비교 탭 고정 추가
+    const familyTab = document.createElement('div');
+    familyTab.className = 'sheet-tab';
+    familyTab.dataset.sheet = 'FamilyCompare';
+    familyTab.textContent = '👨‍👩‍👧‍👦 5인 비교';
+    container.appendChild(familyTab);
+
     container.querySelectorAll('.sheet-tab').forEach(tab => {
         tab.onclick = () => changeSheet(tab.dataset.sheet, tab);
         if (tab.dataset.sheet === currentActiveSheet) tab.classList.add('active');
