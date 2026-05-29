@@ -1351,11 +1351,15 @@ function stripSuffix(name) {
 
 function isManualStock(item) {
     if (!item) return false;
-    // 채권은 청색 표시 제외
-    if (item.type === '채권') return false;
-    // 라이브 가격이 있으면 수동 아님
+    // 채권·예금/현금 제외
+    if (item.type === '채권' || item.type === '예금/현금') return false;
+    // 수량 0 (청산) 제외
+    if (Number(item.qty) <= 0) return false;
+    // 라이브 가격이 정상 동작하면 수동 아님
     if (item.gfSymbol && Number(item.currentPrice) > 0) return false;
-    // 지정된 수동 종목 이름과 매칭
+    // gfSymbol 없으면 → 수동 입력 필요
+    if (!item.gfSymbol) return true;
+    // 지정된 수동 종목 이름
     const clean = stripSuffix(item.name || '');
     return MANUAL_NAMES.includes(clean);
 }
@@ -1398,14 +1402,17 @@ function hasSameNameInOtherSheets(item) {
 function findManualSiblings(item) {
     if (!item || !portfolioData) return [];
     const clean = stripSuffix(item.name || '');
-    if (!clean) return [];
-    // 동일 이름의 모든 다른 시트 종목 (수량>0) — 수동/라이브 무관하게 모두 sync
-    // 라이브 종목도 J열(initialEval) 업데이트는 안전 (K>0이면 L 수식이 K 사용)
-    return portfolioData.filter(s =>
-        s.id !== item.id &&
-        Number(s.qty) > 0 &&
-        stripSuffix(s.name || '') === clean
-    );
+    const ticker = (item.ticker || '').trim();  // 종목코드 (e.g. "449250")
+    if (!clean && !ticker) return [];
+    return portfolioData.filter(s => {
+        if (s.id === item.id || Number(s.qty) <= 0) return false;
+        // 이름 일치
+        if (clean && stripSuffix(s.name || '') === clean) return true;
+        // 종목코드 일치 (이름이 달라도 같은 종목)
+        const sTicker = (s.ticker || '').trim();
+        if (ticker && sTicker && ticker === sTicker) return true;
+        return false;
+    });
 }
 
 // 🔵 현재가 (1주당) 입력 시 → 총 평가금액 자동 계산
