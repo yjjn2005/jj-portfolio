@@ -1256,9 +1256,7 @@ const CORS_ALL  = 'https://api.allorigins.win/get?url=';
 const CORS_CIO  = 'https://corsproxy.io/?';
 
 const LIVE_FETCH_MAP = [
-    { name:'소프트뱅크그룹',                    yahoo:'9984.T',  currency:'JPY' },
-    { name:'TIGER 코리아배당다우존스',           naver:'0052D0',  currency:'KRW' },
-    { name:'KODEX 삼성전자SK하이닉스채권혼합50', naver:'0177N0',  currency:'KRW' },
+    { name:'소프트뱅크그룹', yahoo:'9984.T', currency:'JPY' },
 ];
 
 // allorigins 프록시로 JSON (Naver용)
@@ -1344,6 +1342,8 @@ async function fetchAllLivePrices() {
 // 🔵 수동 입력 대상 종목 이름 (이 이름들만 청색 표시 + 수동 입력 UI)
 const MANUAL_NAMES = [
     '1Q미국우주항공',
+    'TIGER 코리아배당다우존스',
+    'KODEX 삼성전자SK하이닉스채권혼합50',
 ];
 
 function stripSuffix(name) {
