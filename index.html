@@ -249,7 +249,7 @@
         <div class="sheet-tab active" data-sheet="Dashboard">🏠 통합 대시보드</div>
         <div class="sheet-tab" data-sheet="All">📋 전체종목</div>
         <div class="sheet-tab" data-sheet="Top10">🏆 수익률 TOP10</div>
-        <div class="sheet-tab" data-sheet="FamilyCompare">👨‍👩‍👧‍👦 4인 비교</div>
+        <div class="sheet-tab" data-sheet="FamilyCompare">👨‍👩‍👧‍👦 5인 비교</div>
         <!-- 계좌 시트는 데이터 로드 후 동적 생성 -->
     </div>
 
@@ -1005,11 +1005,11 @@ function renderAnalysisTable() {
     tbody.appendChild(tr);
 }
 
-// ===== 4인 가족 비교 뷰 =====
+// ===== 5인 가족 비교 뷰 =====
 function renderFamilyComparison() {
-    const members = ['김희연','유태현','유해인','유지원'];
-    const colors  = ['#e74c3c','#2980b9','#27ae60','#8e44ad'];
-    const emojis  = ['👩','👦','👧','👧'];
+    const members = ['유재진','김희연','유태현','유해인','유지원'];
+    const colors  = ['#f39c12','#e74c3c','#2980b9','#27ae60','#8e44ad'];
+    const emojis  = ['👨','👩','👦','👧','👧'];
 
     const container = document.getElementById('family-compare-content');
     if (!container) return;
@@ -1044,7 +1044,7 @@ function renderFamilyComparison() {
     <!-- 전체 합산 배너 -->
     <div style="background:linear-gradient(135deg,#107c41,#1a9e55);border-radius:10px;padding:18px 24px;margin-bottom:24px;color:#fff;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div>
-            <div style="font-size:13px;opacity:.8;font-weight:600">👨‍👩‍👧‍👦 4인 통합 총자산</div>
+            <div style="font-size:13px;opacity:.8;font-weight:600">👨‍👩‍👧‍👦 5인 통합 총자산</div>
             <div style="font-size:28px;font-weight:900;font-family:monospace;letter-spacing:-1px">₩${fmt(totalEval)}</div>
         </div>
         <div style="display:flex;gap:24px;flex-wrap:wrap">
@@ -1063,8 +1063,8 @@ function renderFamilyComparison() {
         </div>
     </div>
 
-    <!-- 4인 카드 그리드 -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:28px">`;
+    <!-- 5인 카드 그리드 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:28px">`;
 
     summaries.forEach(m => {
         const weight = totalEval > 0 ? (m.eval/totalEval*100) : 0;
@@ -1897,7 +1897,7 @@ async function confirmImport() {
     let ok = 0, err = 0;
     for (const row of pendingImportRows) {
         try {
-            await apiPost({ action:'add', data: row });
+            await apiPost({ action:'add', data: { ...row, owner: currentOwner } });
             ok++;
         } catch(e) { err++; }
     }
