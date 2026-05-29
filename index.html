@@ -1229,9 +1229,9 @@ function openEdit(item) {
     if (isManual) {
         manualGroup.classList.remove('hidden');
         const qty = Number(item.qty) || 0;
-        const eval = Number(item.evalAmount) || 0;
-        document.getElementById('edit-initialEval').value = eval;
-        document.getElementById('edit-manualPrice').value = qty > 0 ? Math.round((eval / qty) * 100) / 100 : 0;
+        const evalAmt = Number(item.evalAmount) || 0;
+        document.getElementById('edit-initialEval').value = evalAmt;
+        document.getElementById('edit-manualPrice').value = qty > 0 ? Math.round((evalAmt / qty) * 100) / 100 : 0;
         // 미리보기
         updateManualPreview(item);
         // 동일 종목 자동 동기화 안내
@@ -1445,10 +1445,10 @@ function updateManualPreview(item) {
     const el = document.getElementById('manualCalcPreview');
     if (!el) return;
     const qty = Number(item.qty) || 0;
-    const eval = Number(item.evalAmount) || 0;
-    const price = qty > 0 ? eval / qty : 0;
+    const evalAmt = Number(item.evalAmount) || 0;
+    const price = qty > 0 ? evalAmt / qty : 0;
     el.classList.remove('hidden');
-    el.innerHTML = `현재 상태 — 보유 <b>${fmtNum(qty)}주</b> × 1주당 <b>₩${fmtNum(price)}</b> = 평가 <b>₩${fmtNum(eval)}</b>`;
+    el.innerHTML = `현재 상태 — 보유 <b>${fmtNum(qty)}주</b> × 1주당 <b>₩${fmtNum(price)}</b> = 평가 <b>₩${fmtNum(evalAmt)}</b>`;
 }
 
 function updateManualPreviewFromForm() {
@@ -2023,13 +2023,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const ownerSel = document.getElementById('ownerFilter');
     if (ownerSel) ownerSel.value = currentOwner;
 
-    // LOCK_OWNER 모드: URL ?owner=X 또는 비번 검증 결과 owner 잠금
+    // ?owner=X → 초기 owner 설정 (드롭다운은 유지, 잠금 없음)
     if (effectiveLockOwner) {
-        if (ownerSel) ownerSel.style.display = 'none';
-        const titleSpan = document.querySelector('.excel-header-bar span.tracking-wide');
-        if (titleSpan) titleSpan.textContent = `${currentOwner} 포트폴리오 — Google Sheets 실시간 동기화`;
-        document.title = `${currentOwner} 포트폴리오`;
-        localStorage.removeItem('portfolio_owner');
+        localStorage.setItem('portfolio_owner', effectiveLockOwner);
     }
 
     if (!API_URL) {
